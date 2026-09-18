@@ -1,13 +1,9 @@
-# SALVE ESTE ARQUIVO NO SEU PC COMO: ponte_local.py
-# Instale no seu PC: pip install fastapi uvicorn pyngrok
-
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from pyngrok import ngrok
 
 app = FastAPI(title="Ponte Nexora com Segurança")
-# Caminho base das suas pastas (Pode ser 'C:/Projetos' por exemplo)
 BASE_DIR = os.path.expanduser("~") 
 
 class FileReq(BaseModel):
@@ -45,13 +41,37 @@ def salvar_arquivo(req: FileReq):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/listar_arquivos")
+def listar_arquivos(req: FileReq):
+    pedir_permissao("LISTAR DIRETÓRIO", req.caminho)
+    
+    if req.caminho.startswith('/'):
+        caminho_completo = req.caminho
+    else:
+        caminho_completo = os.path.join(BASE_DIR, req.caminho)
+        
+    try:
+        if not os.path.exists(caminho_completo):
+            return {"conteudo": f"Erro: O caminho {caminho_completo} não existe."}
+        if not os.path.isdir(caminho_completo):
+            return {"conteudo": f"Erro: O caminho {caminho_completo} não é um diretório."}
+            
+        arquivos = os.listdir(caminho_completo)
+        if not arquivos:
+            return {"conteudo": "O diretório está vazio."}
+        return {"conteudo": "\n".join(arquivos)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
-    # Abre o tunel
+    
+    # Substitua "COLE_SEU_TOKEN_AQUI" pelo seu token real (mantenha as aspas)
+    ngrok.set_auth_token("3If7VYUjK42guifVgyVg5QwDfYP_29mHaGB8LqNNwvrU1Re1h")
+    
     url_publica = ngrok.connect(8000)
     print("\n" + "="*50)
     print("COPIE ESTE LINK E COLE LÁ NO COLAB:")
     print(url_publica.public_url)
     print("="*50 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

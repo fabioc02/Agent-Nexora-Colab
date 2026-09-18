@@ -36,10 +36,17 @@ print("Instalando ferramentas de sistema (zstd, build-essential)...")
 !apt-get update > /dev/null
 !apt-get install -y zstd build-essential cmake openjdk-17-jdk binwalk hexyl > /dev/null
 
-print("Instalando dependências base e ferramentas de áudio/hex...")
+print("Instalando script de IA...")
 !curl -fsSL https://ollama.com/install.sh | sh
 !pip install pyngrok requests mido construct pydub hexdump
 !ngrok config add-authtoken $NGROK_AUTH_TOKEN
+
+print("Ligando o Ollama...")
+subprocess.Popen(["ollama", "serve"])
+time.sleep(5) 
+
+print(f"Baixando o modelo {MODELO_DEEPSEEK}...")
+!ollama pull $MODELO_DEEPSEEK
 
 print("Baixando o Agente Nexora...")
 %cd /content

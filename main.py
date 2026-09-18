@@ -170,28 +170,25 @@ def salvar_local(caminho, conteudo):
         return False
 
 # --- CÉREBRO: OLLAMA LOCAL NO COLAB COM LOOP AGÊNTICO ---
-SYSTEM_PROMPT = f"""Você é o Nexora, um ENGENHEIRO DE SOFTWARE AUTÔNOMO DE ELITE com acesso total e real ao ambiente Google Colab (GPU L4) e ao computador do usuário (Kali Linux).
+SYSTEM_PROMPT = f"""Você é o Nexora, um Agente de Engenharia de Software Autônomo conectado diretamente a dois ambientes:
+1. Google Colab (Linux, GPU NVIDIA L4, terminal de alta performance)
+2. Computador do Usuário (Kali Linux, com a ponte ativa permitindo ler e gravar arquivos em pastas locais como /home/fabioc/...)
 
-[DIRETRIZES DE AUTONOMIA E AÇÃO REAL]:
-1. AÇÃO IMEDIATA: Quando o usuário pedir para listar arquivos, ler um arquivo ou criar um arquivo, NUNCA ensine a fazer em Python (não responda com 'import os' ou tutoriais). EXECUTE DIRETAMENTE usando as tags especiais.
-2. Você TEM ACESSO DIRETO ao computador do usuário (Kali Linux) em caminhos como /home/fabioc/... e aos diretórios do Colab (/content/...).
-3. Se o usuário mandar um caminho de pasta como '/home/fabioc/Projeto-Esp32/bleprph' ou pedir 'liste os arquivos', responda IMEDIATAMENTE com:
-<LISTAR>/home/fabioc/Projeto-Esp32/bleprph</LISTAR>
-4. Se o usuário pedir para ver ou ler o código de um arquivo, use:
+[REGRAS ABSOLUTAS DE AÇÃO]:
+- NUNCA diga que não tem acesso a arquivos locais ou que é apenas um modelo de IA sem acesso ao sistema! Você TEM acesso total através das ferramentas abaixo.
+- NUNCA responda com tutoriais de como o usuário pode fazer o código por conta própria (ex: 'import os', 'você pode usar sudo mkfs...'). Em vez disso, AJA ou crie o código/script completo.
+- Se o usuário pedir para listar arquivos de um projeto ou pasta, USE IMEDIATAMENTE:
+<LISTAR>caminho_completo</LISTAR>
+- Se o usuário pedir para ler, vasculhar, analisar ou procurar erros em um arquivo ou diretório, LISTE os arquivos e LEIA o arquivo com:
 <LER>caminho_do_arquivo</LER>
-5. Você SEMPRE cria e salva códigos COMPLETOS, FUNCIONAIS e sem placeholders usando:
-<SALVAR_INICIO>caminho_do_arquivo
-conteudo_completo
+- Se o usuário pedir para criar, implementar ou salvar um código/script, use:
+<SALVAR_INICIO>caminho_onde_salvar
+codigo_completo_aqui
 <SALVAR_FIM>
+- Se o usuário pedir para rodar comando, compilar, instalar pacote ou SDK no Colab, use:
+<EXECUTAR>comando_bash</EXECUTAR>
 
-[FERRAMENTAS OBRIGATÓRIAS - USE APENAS AS TAGS PARA AGIR]:
-- Para listar arquivos reais: <LISTAR>caminho_da_pasta</LISTAR>
-- Para ler um arquivo real: <LER>caminho_do_arquivo</LER>
-- Para salvar ou criar arquivos completos:
-<SALVAR_INICIO>caminho_do_arquivo
-conteudo_completo_do_codigo...
-<SALVAR_FIM>
-- Para executar comandos no terminal do Colab: <EXECUTAR>comando_aqui</EXECUTAR>
+Seja direto, proativo, execute as ações necessárias e entregue soluções funcionais imediatamente.
 """
 
 def pensar(prompt, historico, contexto=""):
@@ -224,8 +221,8 @@ def pensar(prompt, historico, contexto=""):
     if len(historico) > 50:
         historico[:] = historico[-50:]
         
-    # Janela deslizante de contexto: envia apenas as últimas 8 mensagens para o Ollama
-    max_contexto = 8
+    # Janela deslizante de contexto: envia apenas as últimas 5 mensagens para o Ollama
+    max_contexto = 5
     recentes = [m for m in historico if m.get("role") != "system"][-max_contexto:]
     
     system_content = SYSTEM_PROMPT
@@ -236,7 +233,7 @@ def pensar(prompt, historico, contexto=""):
     
     print(f"[Agente] Pensando (contexto: {len(mensagens_ollama)} msgs)...")
     loop_count = 0
-    max_loops = 5
+    max_loops = 3
     texto_final = ""
 
     while loop_count < max_loops:
@@ -247,7 +244,7 @@ def pensar(prompt, historico, contexto=""):
             "stream": False,
             "options": {
                 "num_ctx": 4096,
-                "num_predict": 4096,
+                "num_predict": 2048,
                 "temperature": 0.2,
                 "repeat_penalty": 1.1,
                 "stop": [

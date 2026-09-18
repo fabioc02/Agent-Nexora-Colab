@@ -672,7 +672,7 @@ function ChatView({
     setIsLoading(true);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 95000);
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutos de tolerância para modelos locais e comandos longos
 
     try {
       const cleanUrl = colabUrl.trim().replace(/\/$/, '');

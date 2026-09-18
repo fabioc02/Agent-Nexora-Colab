@@ -1,9 +1,25 @@
 import os
+import argparse
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pyngrok import ngrok
 
+parser = argparse.ArgumentParser(description="Ponte Nexora Local")
+parser.add_argument("--auto-allow-list", action="store_true", default=True, help="Permite listar diretórios sem travar no prompt")
+parser.add_argument("--auto-allow-read", action="store_true", default=False, help="Permite leitura sem prompt")
+args_cli, _ = parser.parse_known_args()
+
 app = FastAPI(title="Ponte Nexora com Segurança")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 BASE_DIR = os.path.expanduser("~") 
 
 class FileReq(BaseModel):
@@ -19,9 +35,18 @@ def pedir_permissao(acao: str, arquivo: str):
         raise HTTPException(status_code=403, detail="Permissão negada pelo usuário.")
     print("[✓] Ação permitida.")
 
+@app.get("/status")
+def get_status():
+    return {
+        "status": "online",
+        "base_dir": BASE_DIR,
+        "usuario": os.environ.get("USER", "kali")
+    }
+
 @app.post("/ler_arquivo")
 def ler_arquivo(req: FileReq):
-    pedir_permissao("LER", req.caminho)
+    if not args_cli.auto_allow_read:
+        pedir_permissao("LER", req.caminho)
     caminho_completo = req.caminho if req.caminho.startswith('/') else os.path.join(BASE_DIR, req.caminho)
     try:
         with open(caminho_completo, 'r', encoding='utf-8', errors='ignore') as f:
@@ -43,7 +68,8 @@ def salvar_arquivo(req: FileReq):
 
 @app.post("/listar_arquivos")
 def listar_arquivos(req: FileReq):
-    pedir_permissao("LISTAR DIRETÓRIO", req.caminho)
+    if not args_cli.auto_allow_list:
+        pedir_permissao("LISTAR DIRETÓRIO", req.caminho)
     caminho_completo = req.caminho if req.caminho.startswith('/') else os.path.join(BASE_DIR, req.caminho)
         
     try:

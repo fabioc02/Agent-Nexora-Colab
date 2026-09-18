@@ -360,7 +360,7 @@ def pensar(prompt, historico, contexto=""):
             
         # --- AUTO-INTERCEPTAÇÃO EXECUTIVA SE O MODELO DEU DESCULPAS OU BLOCOS DE CÓDIGO ---
         # Se o usuário pediu sequenciador / groove / compilador / app em C++ e o modelo gerou bloco de código ```cpp
-        if any(t in prompt.lower() for t in ['groove', 'sequenciador', 'c++', 'app']) and "```cpp" in texto:
+        if any(t in prompt.lower() for t in ['groove', 'sequenciador', 'c++', 'app', 'gui', 'sdl', 'raylib']) and "```cpp" in texto:
             try:
                 codigo_cpp = texto.split("```cpp")[1].split("```")[0].strip()
                 dir_app = "/content/drive/MyDrive/AgentNexora/groovestation"
@@ -368,15 +368,46 @@ def pensar(prompt, historico, contexto=""):
                 arquivo_cpp = os.path.join(dir_app, "main.cpp")
                 with open(arquivo_cpp, 'w', encoding='utf-8') as f:
                     f.write(codigo_cpp)
+                # Salva também cópia com o nome alternativo que comandos possam buscar
+                with open(os.path.join(dir_app, "groovestation_gui.cpp"), 'w', encoding='utf-8') as f:
+                    f.write(codigo_cpp)
+                with open(os.path.join(dir_app, "sequencer.cpp"), 'w', encoding='utf-8') as f:
+                    f.write(codigo_cpp)
                 logs_execucao.append(f"💾 [Auto-Executivo] Código C++ salvo em `{arquivo_cpp}`")
                 
-                # Tenta compilar no Colab
-                cmd_compilar = f"g++ -O3 {arquivo_cpp} -o {dir_app}/groovestation"
+                # Detecta bibliotecas necessárias no código e instala automaticamente com apt-get
+                flags_libs = ["-lpthread"]
+                if "SDL2" in codigo_cpp or "SDL.h" in codigo_cpp:
+                    print("[Auto-Dep] Instalando libsdl2-dev no Colab...")
+                    subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libsdl2-dev libsdl2-mixer-dev")
+                    flags_libs.extend(["-lSDL2", "-lSDL2_mixer"])
+                if "raylib" in codigo_cpp:
+                    print("[Auto-Dep] Instalando libraylib-dev no Colab...")
+                    subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libraylib-dev")
+                    flags_libs.extend(["-lraylib", "-lGL", "-lm", "-ldl", "-lrt", "-lX11"])
+                if "asoundlib.h" in codigo_cpp:
+                    print("[Auto-Dep] Instalando libasound2-dev no Colab...")
+                    subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libasound2-dev")
+                    flags_libs.append("-lasound")
+
+                flags_str = " ".join(flags_libs)
+                out_name = "groovestation_gui" if any(k in prompt.lower() or k in codigo_cpp.lower() for k in ['gui', 'sdl', 'raylib', 'window']) else "groovestation"
+                bin_alvo = os.path.join(dir_app, out_name)
+                
+                # Executa a compilação com g++
+                cmd_compilar = f"g++ -O3 {arquivo_cpp} {flags_str} -o {bin_alvo}"
+                print(f"[Auto-Compilação] {cmd_compilar}")
                 out_comp = subprocess.getoutput(cmd_compilar)
-                if os.path.exists(f"{dir_app}/groovestation"):
-                    logs_execucao.append(f"⚡ [Auto-Executivo] Compilado com sucesso!\nExecutável salvo em: `{dir_app}/groovestation`")
+                
+                # Cria também symlink ou cópia para groovestation
+                if os.path.exists(bin_alvo):
+                    os.chmod(bin_alvo, 0o755)
+                    # Cria cópia para garantir que ambos os nomes existam
+                    if out_name == "groovestation_gui":
+                        subprocess.getoutput(f"cp -f {bin_alvo} {dir_app}/groovestation")
+                    logs_execucao.append(f"⚡ [Auto-Executivo] Compilado com sucesso para Linux nativo (ELF x86_64)!\nExecutável gerado: `{bin_alvo}` ({os.path.getsize(bin_alvo)} bytes)")
                 else:
-                    logs_execucao.append(f"⚡ [Auto-Executivo] Tentativa de compilação:\n```\n{out_comp[:400]}\n```")
+                    logs_execucao.append(f"⚠️ [Falha na Compilação g++]:\n```\n{out_comp[:600]}\n```")
             except Exception as e:
                 logs_execucao.append(f"Erro auto-executivo: {e}")
 

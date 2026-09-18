@@ -170,47 +170,57 @@ def salvar_local(caminho, conteudo):
         return False
 
 # --- CÉREBRO: OLLAMA LOCAL NO COLAB COM LOOP AGÊNTICO ---
-SYSTEM_PROMPT = """Você é o Nexora, um Agente Autônomo de Engenharia de Software no Google Colab (Linux, GPU NVIDIA L4 24GB, 50GB RAM, 200GB Disco, root total).
+SYSTEM_PROMPT = """Você é o Nexora, um Agente Executivo de Engenharia de Software rodando no Google Colab (Linux Ubuntu, GPU NVIDIA L4 24GB, 50GB RAM, 200GB Disco, root total).
 Armazenamento permanente persistente no Google Drive: /content/drive/MyDrive/AgentNexora/
 
-[SUAS FERRAMENTAS - USE EXATAMENTE ESTAS TAGS]:
-1. Compilar ou rodar comando no terminal:
+[REGRA SUPREMA - NUNCA MANDE O USUÁRIO DIGITAR NADA]:
+Você possui acesso root direto ao terminal e aos arquivos.
+NUNCA mande o usuário digitar comandos no terminal.
+NUNCA diga que criar um app é muito complexo.
+Você mesmo DEVE executar as instalações, escrever o código completo e compilar usando as tags:
+1. Para rodar comandos no terminal do Colab (instalações apt-get, compilações g++/cmake, etc):
 <EXECUTAR>comando_aqui</EXECUTAR>
 
-2. Criar ou salvar código/arquivo:
+2. Para salvar código-fonte ou arquivos completos no Colab ou Drive:
 <SALVAR_INICIO>caminho_do_arquivo
-conteudo_do_codigo
+conteudo_do_codigo_aqui
 <SALVAR_FIM>
 
-3. Listar arquivos de uma pasta:
+3. Para listar arquivos:
 <LISTAR>caminho_da_pasta</LISTAR>
 
-4. Ler arquivo existente:
+4. Para ler arquivos:
 <LER>caminho_do_arquivo</LER>
 
-[EXEMPLOS OBRIGATÓRIOS DE COMPORTAMENTO]:
-- Se o usuário pedir: "crie um app em C++ e compile":
-NÃO diga que é complexo. NÃO mande o usuário estudar. AJA imediatamente:
-Escreva o código funcional com <SALVAR_INICIO>/content/drive/MyDrive/AgentNexora/main.cpp ... <SALVAR_FIM> e compile imediatamente com <EXECUTAR>g++ -O3 /content/drive/MyDrive/AgentNexora/main.cpp -o /content/drive/MyDrive/AgentNexora/executavel</EXECUTAR>.
-
-- Se o usuário pedir: "instale sdk android" ou "instale bibliotecas":
-Execute imediatamente <EXECUTAR>apt-get update && apt-get install -y ...</EXECUTAR>.
-
-- Se o usuário pedir: "liste arquivos de /pasta":
-Responda com <LISTAR>/pasta</LISTAR>.
-
-NUNCA dê desculpas. Sempre use as tags para entregar o código criado, compilado e salvo.
+[EXEMPLO - Quando o usuário pedir para criar um app e compilar]:
+<SALVAR_INICIO>/content/drive/MyDrive/AgentNexora/app.cpp
+#include <iostream>
+int main() { std::cout << "App rodando!" << std::endl; return 0; }
+<SALVAR_FIM>
+<EXECUTAR>g++ -O3 /content/drive/MyDrive/AgentNexora/app.cpp -o /content/drive/MyDrive/AgentNexora/app</EXECUTAR>
 """
 
 def pensar(prompt, historico, contexto=""):
     url = "http://localhost:11434/api/chat"
-    
-    # Heurística inteligente: se o usuário digitou apenas um caminho ou 'liste os arquivos de /caminho'
     prompt_limpo = prompt.strip()
+
+    # 1. Se o usuário digitou um comando bash direto no chat (ex: df -h, ls ..., nvidia-smi, apt install ...)
+    comandos_diretos_bash = ['ls', 'df', 'cat', 'pwd', 'nvidia-smi', 'uname', 'free', 'pip', 'apt', 'git', 'g++', 'make', 'cmake', 'python']
+    primeira_palavra = prompt_limpo.split()[0].lower() if prompt_limpo.split() else ''
+    if primeira_palavra in comandos_diretos_bash or prompt_limpo.startswith('!'):
+        cmd = prompt_limpo.lstrip('!')
+        print(f"[Agente Auto-Exec] Rodando comando direto no Colab: {cmd}")
+        saida = subprocess.getoutput(cmd)
+        resposta_direta = f"⚡ **Terminal Colab (root):** `{cmd}`\n\n```bash\n{saida}\n```"
+        historico.append({"role": "user", "content": prompt})
+        historico.append({"role": "assistant", "content": resposta_direta})
+        salvar_memoria(historico)
+        return resposta_direta
+
+    # 2. Heurística inteligente para listagem de pastas
     match_caminho = re.search(r'(/[a-zA-Z0-9_\-\./]+)', prompt_limpo)
     eh_comando_listar = any(w in prompt_limpo.lower() for w in ['liste', 'listar', 'veja os arquivos', 'mostre os arquivos', 'conteúdo da pasta', 'diretório'])
     
-    # Se enviou apenas um caminho (ex: /home/fabioc/Projeto-Esp32/bleprph) ou pediu explicitamente para listar
     if match_caminho and (eh_comando_listar or prompt_limpo == match_caminho.group(1)):
         caminho_alvo = match_caminho.group(1)
         print(f"[Agente Auto-Ação] Detectado pedido direto de listagem para: {caminho_alvo}")
@@ -240,10 +250,10 @@ def pensar(prompt, historico, contexto=""):
     if contexto.strip():
         system_content += f"\n\n[CONTEXTO ATIVO DO PROJETO SELECIONADO PELO USUÁRIO]:\n{contexto.strip()}\n"
         
-    # Se o usuário pede explicitamente criação, compilação ou instalação, reforça para o DeepSeek não teorizar
-    termos_acao = ['compile', 'compilar', 'executavel', 'crie', 'criar', 'instale', 'instalar', 'desenvolva', 'sdk']
+    # Se o usuário pede explicitamente criação, compilação ou instalação, reforça o modo executivo
+    termos_acao = ['compile', 'compilar', 'executavel', 'crie', 'criar', 'instale', 'instalar', 'desenvolva', 'sdk', 'sequenciador', 'groovestation']
     if any(t in prompt.lower() for t in termos_acao):
-        system_content += "\n[ALERTA DE AÇÃO OBRIGATÓRIA]: O usuário solicitou CRIAR, INSTALAR ou COMPILAR. Você NÃO deve responder com tutoriais ou explicações teóricas. Responda DIRETAMENTE com as tags de ação (<SALVAR_INICIO> e <EXECUTAR>) para criar os arquivos e compilar no Google Colab salvando no Drive (/content/drive/MyDrive/AgentNexora/)!"
+        system_content += "\n[ORDEM EXECUTIVA]: O usuário pediu para CRIAR, INSTALAR ou COMPILAR. Você DEVE usar obrigatoriamente as tags <SALVAR_INICIO> para o código e <EXECUTAR> para compilar ou instalar no Colab! Não envie explicações teóricas!"
 
     mensagens_ollama = [{"role": "system", "content": system_content}] + recentes
     
@@ -298,7 +308,8 @@ def pensar(prompt, historico, contexto=""):
         elif "### Instruction:" in texto_final:
             texto_final = texto_final.split("### Instruction:")[0].strip()
         
-        # --- PROCESSAR TAGS ---
+        # --- PROCESSAR TAGS EXPLÍCITAS ---
+        tem_acao = False
         if "<LISTAR>" in texto and "</LISTAR>" in texto:
             caminho = texto.split("<LISTAR>")[1].split("</LISTAR>")[0].strip()
             if caminho.startswith("/content") or caminho.startswith("."): 
@@ -308,7 +319,7 @@ def pensar(prompt, historico, contexto=""):
             mensagens_ollama.append({"role": "user", "content": f"Resultado de LISTAR:\n{result}"})
             logs_execucao.append(f"📁 Listado `{caminho}`")
             print(f"[Agente Tool] Listou diretório: {caminho}")
-            continue
+            tem_acao = True
             
         elif "<LER>" in texto and "</LER>" in texto:
             caminho = texto.split("<LER>")[1].split("</LER>")[0].strip()
@@ -319,7 +330,7 @@ def pensar(prompt, historico, contexto=""):
             mensagens_ollama.append({"role": "user", "content": f"Conteúdo de {caminho}:\n{result}"})
             logs_execucao.append(f"📄 Lido `{caminho}`")
             print(f"[Agente Tool] Leu arquivo: {caminho}")
-            continue
+            tem_acao = True
             
         elif "<SALVAR_INICIO>" in texto and "<SALVAR_FIM>" in texto:
             bloco = texto.split("<SALVAR_INICIO>")[1].split("<SALVAR_FIM>")[0]
@@ -330,11 +341,11 @@ def pensar(prompt, historico, contexto=""):
                 sucesso = salvar_local(caminho, conteudo)
             else: 
                 sucesso = salvar_pc(caminho, conteudo)
-            obs = f"Salvo com sucesso!" if sucesso else "Erro ao salvar."
+            obs = f"Salvo com sucesso em {caminho}!" if sucesso else "Erro ao salvar."
             mensagens_ollama.append({"role": "user", "content": obs})
             logs_execucao.append(f"💾 Criado/Salvo `{caminho}`")
             print(f"[Agente Tool] Salvou arquivo: {caminho}")
-            continue
+            tem_acao = True
             
         elif "<EXECUTAR>" in texto and "</EXECUTAR>" in texto:
             comando = texto.split("<EXECUTAR>")[1].split("</EXECUTAR>")[0].strip()
@@ -342,9 +353,46 @@ def pensar(prompt, historico, contexto=""):
             result = subprocess.getoutput(comando)
             mensagens_ollama.append({"role": "user", "content": f"Saída do terminal:\n{result}"})
             logs_execucao.append(f"⚡ Terminal: `{comando}`\n```\n{result[:600]}\n```")
+            tem_acao = True
+
+        if tem_acao:
             continue
             
-        break # Nenhuma tag, terminar loop
+        # --- AUTO-INTERCEPTAÇÃO EXECUTIVA SE O MODELO DEU DESCULPAS OU BLOCOS DE CÓDIGO ---
+        # Se o usuário pediu sequenciador / groove / compilador / app em C++ e o modelo gerou bloco de código ```cpp
+        if any(t in prompt.lower() for t in ['groove', 'sequenciador', 'c++', 'app']) and "```cpp" in texto:
+            try:
+                codigo_cpp = texto.split("```cpp")[1].split("```")[0].strip()
+                dir_app = "/content/drive/MyDrive/AgentNexora/groovestation"
+                os.makedirs(dir_app, exist_ok=True)
+                arquivo_cpp = os.path.join(dir_app, "main.cpp")
+                with open(arquivo_cpp, 'w', encoding='utf-8') as f:
+                    f.write(codigo_cpp)
+                logs_execucao.append(f"💾 [Auto-Executivo] Código C++ salvo em `{arquivo_cpp}`")
+                
+                # Tenta compilar no Colab
+                cmd_compilar = f"g++ -O3 {arquivo_cpp} -o {dir_app}/groovestation"
+                out_comp = subprocess.getoutput(cmd_compilar)
+                if os.path.exists(f"{dir_app}/groovestation"):
+                    logs_execucao.append(f"⚡ [Auto-Executivo] Compilado com sucesso!\nExecutável salvo em: `{dir_app}/groovestation`")
+                else:
+                    logs_execucao.append(f"⚡ [Auto-Executivo] Tentativa de compilação:\n```\n{out_comp[:400]}\n```")
+            except Exception as e:
+                logs_execucao.append(f"Erro auto-executivo: {e}")
+
+        # Se o modelo sugeriu comandos bash tipo ```bash apt-get ... ``` ou ```bash g++ ... ```
+        if "```bash" in texto and any(t in prompt.lower() for t in ['instale', 'compile', 'crie', 'rodar', 'execute']):
+            try:
+                comandos_sugeridos = texto.split("```bash")[1].split("```")[0].strip().split("\n")
+                for cmd_s in comandos_sugeridos:
+                    cmd_s = cmd_s.strip()
+                    if cmd_s and not cmd_s.startswith("#") and any(k in cmd_s for k in ['apt', 'pip', 'g++', 'make', 'cmake', 'mkdir', 'git']):
+                        out_s = subprocess.getoutput(cmd_s)
+                        logs_execucao.append(f"⚡ [Auto-Executado no Colab]: `{cmd_s}`\n```\n{out_s[:400]}\n```")
+            except Exception as e:
+                logs_execucao.append(f"Erro ao auto-executar comando sugerido: {e}")
+
+        break # Terminar loop
 
     # Atualiza e salva o histórico no Google Drive
     historico.append({"role": "assistant", "content": texto_final})
@@ -359,10 +407,10 @@ def pensar(prompt, historico, contexto=""):
 
     # Se houve ações reais executadas, anexa o resumo no topo da resposta
     if logs_execucao:
-        resumo_acoes = "### 🛠️ Ações Executadas pelo Nexora:\n" + "\n\n".join(logs_execucao) + "\n\n---\n"
+        resumo_acoes = "### 🛠️ Ações Executadas pelo Nexora no Google Colab:\n" + "\n\n".join(logs_execucao) + "\n\n---\n"
         res = resumo_acoes + res
 
-    return res if res else "Ação executada com sucesso pelo Nexora."
+    return res if res else "Ação executada com sucesso pelo Nexora no Google Colab."
 
 @api_app.get("/api/health")
 def api_health():

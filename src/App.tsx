@@ -908,11 +908,20 @@ function ArquivosView({
     if (!colabUrl.trim()) return;
     setIsLoading(true);
     try {
+      let targetOrig = orig;
+      if (dirPath.startsWith('/content') || dirPath.startsWith('/var') || dirPath.startsWith('/tmp') || dirPath.startsWith('.')) {
+        targetOrig = 'drive';
+        if (origem !== 'drive') setOrigem('drive');
+      } else if (dirPath.startsWith('/home') || dirPath.startsWith('/root')) {
+        targetOrig = 'pc';
+        if (origem !== 'pc') setOrigem('pc');
+      }
+
       const cleanUrl = colabUrl.trim().replace(/\/$/, '');
       const res = await fetch(`${cleanUrl}/api/files/list`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caminho: dirPath, origem: orig })
+        body: JSON.stringify({ caminho: dirPath, origem: targetOrig })
       });
       const data = await res.json();
       if (data.items) {

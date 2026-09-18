@@ -170,35 +170,36 @@ def salvar_local(caminho, conteudo):
         return False
 
 # --- CÉREBRO: OLLAMA LOCAL NO COLAB COM LOOP AGÊNTICO ---
-SYSTEM_PROMPT = f"""Você é o Nexora, um ENGENHEIRO DE SOFTWARE E HACKER DE SISTEMAS AUTÔNOMO DE ELITE.
-Você opera com privilégios totais em uma infraestrutura híbrida de alto poder computacional:
+SYSTEM_PROMPT = """Você é o Nexora, um Agente Autônomo de Engenharia de Software no Google Colab (Linux, GPU NVIDIA L4 24GB, 50GB RAM, 200GB Disco, root total).
+Armazenamento permanente persistente no Google Drive: /content/drive/MyDrive/AgentNexora/
 
-[SUA INFRAESTRUTURA COMPUTACIONAL]:
-1. Servidor Principal (Google Colab):
-   - Hardware: GPU NVIDIA L4 (24GB VRAM), CPU de alta performance, 50GB+ de RAM e 200GB+ de armazenamento veloz.
-   - Ambiente: Linux Debian/Ubuntu com acesso root total via terminal bash.
-   - Armazenamento Persistente Permanente: /content/drive/MyDrive/AgentNexora/ (qualquer arquivo, código, binário compilado, SDK ou projeto salvo aqui fica guardado para sempre no Google Drive do usuário!).
-2. Máquina Local do Usuário (Kali Linux):
-   - Conectada em tempo real via ponte para ler e gravar arquivos locais em caminhos como /home/fabioc/...
+[SUAS FERRAMENTAS - USE EXATAMENTE ESTAS TAGS]:
+1. Compilar ou rodar comando no terminal:
+<EXECUTAR>comando_aqui</EXECUTAR>
 
-[DIRETRIZES FUNDAMENTAIS DE COMPORTAMENTO]:
-- NUNCA SEJA UM BOT TEÓRICO: NUNCA diga frases preguiçosas como 'criar um app é muito complexo', 'exige estudo prévio', 'não tenho acesso', ou apenas mostre tutoriais teóricos. Você é o executor!
-- COMPILAÇÃO E PESO COMPUTACIONAL: Todo trabalho pesado (instalar SDKs como Android SDK, instalar dependências apt/pip/cmake, compilar código C++/Rust, ferramentas de engenharia reversa como Ghidra/radare2, sintetizadores de áudio como JUCE/ALSA, compiladores) DEVE ser executado diretamente no Google Colab usando a tag <EXECUTAR>.
-- PERSISTÊNCIA NO DRIVE: Ao criar projetos pesados, compilar binários ou baixar SDKs, organize os arquivos e copie o resultado final compilado para /content/drive/MyDrive/AgentNexora/ para o usuário ter acesso vitalício!
+2. Criar ou salvar código/arquivo:
+<SALVAR_INICIO>caminho_do_arquivo
+conteudo_do_codigo
+<SALVAR_FIM>
 
-[FERRAMENTAS DE AÇÃO - ACIONE DIRETAMENTE VIA TAGS]:
-- Para rodar comandos bash no terminal do Colab (compilar g++, cmake, apt-get, pip, make, baixar sdks, etc):
-  <EXECUTAR>comando_bash_aqui</EXECUTAR>
-- Para criar ou salvar códigos completos, scripts e projetos:
-  <SALVAR_INICIO>caminho_completo_do_arquivo
-  codigo_completo_aqui_sem_cortes
-  <SALVAR_FIM>
-- Para listar arquivos em qualquer diretório (seja no Colab ou no Kali Linux):
-  <LISTAR>caminho_da_pasta</LISTAR>
-- Para ler e vasculhar o código de arquivos existentes:
-  <LER>caminho_do_arquivo</LER>
+3. Listar arquivos de uma pasta:
+<LISTAR>caminho_da_pasta</LISTAR>
 
-Aja como um especialista sênior: planeje e execute os passos necessários, crie a estrutura, instale as ferramentas necessárias e entregue o resultado compilado e funcional.
+4. Ler arquivo existente:
+<LER>caminho_do_arquivo</LER>
+
+[EXEMPLOS OBRIGATÓRIOS DE COMPORTAMENTO]:
+- Se o usuário pedir: "crie um app em C++ e compile":
+NÃO diga que é complexo. NÃO mande o usuário estudar. AJA imediatamente:
+Escreva o código funcional com <SALVAR_INICIO>/content/drive/MyDrive/AgentNexora/main.cpp ... <SALVAR_FIM> e compile imediatamente com <EXECUTAR>g++ -O3 /content/drive/MyDrive/AgentNexora/main.cpp -o /content/drive/MyDrive/AgentNexora/executavel</EXECUTAR>.
+
+- Se o usuário pedir: "instale sdk android" ou "instale bibliotecas":
+Execute imediatamente <EXECUTAR>apt-get update && apt-get install -y ...</EXECUTAR>.
+
+- Se o usuário pedir: "liste arquivos de /pasta":
+Responda com <LISTAR>/pasta</LISTAR>.
+
+NUNCA dê desculpas. Sempre use as tags para entregar o código criado, compilado e salvo.
 """
 
 def pensar(prompt, historico, contexto=""):
@@ -239,12 +240,18 @@ def pensar(prompt, historico, contexto=""):
     if contexto.strip():
         system_content += f"\n\n[CONTEXTO ATIVO DO PROJETO SELECIONADO PELO USUÁRIO]:\n{contexto.strip()}\n"
         
+    # Se o usuário pede explicitamente criação, compilação ou instalação, reforça para o DeepSeek não teorizar
+    termos_acao = ['compile', 'compilar', 'executavel', 'crie', 'criar', 'instale', 'instalar', 'desenvolva', 'sdk']
+    if any(t in prompt.lower() for t in termos_acao):
+        system_content += "\n[ALERTA DE AÇÃO OBRIGATÓRIA]: O usuário solicitou CRIAR, INSTALAR ou COMPILAR. Você NÃO deve responder com tutoriais ou explicações teóricas. Responda DIRETAMENTE com as tags de ação (<SALVAR_INICIO> e <EXECUTAR>) para criar os arquivos e compilar no Google Colab salvando no Drive (/content/drive/MyDrive/AgentNexora/)!"
+
     mensagens_ollama = [{"role": "system", "content": system_content}] + recentes
     
     print(f"[Agente] Pensando (contexto: {len(mensagens_ollama)} msgs)...")
     loop_count = 0
     max_loops = 3
     texto_final = ""
+    logs_execucao = []
 
     while loop_count < max_loops:
         loop_count += 1
@@ -299,6 +306,7 @@ def pensar(prompt, historico, contexto=""):
             else: 
                 result = listar_pc(caminho)
             mensagens_ollama.append({"role": "user", "content": f"Resultado de LISTAR:\n{result}"})
+            logs_execucao.append(f"📁 Listado `{caminho}`")
             print(f"[Agente Tool] Listou diretório: {caminho}")
             continue
             
@@ -309,6 +317,7 @@ def pensar(prompt, historico, contexto=""):
             else: 
                 result = ler_pc(caminho)
             mensagens_ollama.append({"role": "user", "content": f"Conteúdo de {caminho}:\n{result}"})
+            logs_execucao.append(f"📄 Lido `{caminho}`")
             print(f"[Agente Tool] Leu arquivo: {caminho}")
             continue
             
@@ -323,6 +332,7 @@ def pensar(prompt, historico, contexto=""):
                 sucesso = salvar_pc(caminho, conteudo)
             obs = f"Salvo com sucesso!" if sucesso else "Erro ao salvar."
             mensagens_ollama.append({"role": "user", "content": obs})
+            logs_execucao.append(f"💾 Criado/Salvo `{caminho}`")
             print(f"[Agente Tool] Salvou arquivo: {caminho}")
             continue
             
@@ -331,6 +341,7 @@ def pensar(prompt, historico, contexto=""):
             print(f"[Agente Tool] Executando comando no Colab: {comando}")
             result = subprocess.getoutput(comando)
             mensagens_ollama.append({"role": "user", "content": f"Saída do terminal:\n{result}"})
+            logs_execucao.append(f"⚡ Terminal: `{comando}`\n```\n{result[:600]}\n```")
             continue
             
         break # Nenhuma tag, terminar loop
@@ -339,12 +350,19 @@ def pensar(prompt, historico, contexto=""):
     historico.append({"role": "assistant", "content": texto_final})
     salvar_memoria(historico)
     
-    # Limpar tags da resposta final para ficar bonito para o usuário
+    # Limpar tags da resposta final mantendo a clareza
     res = re.sub(r'<LISTAR>.*?</LISTAR>', '', texto_final, flags=re.DOTALL)
     res = re.sub(r'<LER>.*?</LER>', '', res, flags=re.DOTALL)
-    res = re.sub(r'<SALVAR_INICIO>.*?<SALVAR_FIM>', '[ARQUIVO SALVO]', res, flags=re.DOTALL)
-    res = re.sub(r'<EXECUTAR>.*?</EXECUTAR>', '[COMANDO EXECUTADO NO TERMINAL]', res, flags=re.DOTALL)
-    return res.strip()
+    res = re.sub(r'<SALVAR_INICIO>.*?<SALVAR_FIM>', '', res, flags=re.DOTALL)
+    res = re.sub(r'<EXECUTAR>.*?</EXECUTAR>', '', res, flags=re.DOTALL)
+    res = res.strip()
+
+    # Se houve ações reais executadas, anexa o resumo no topo da resposta
+    if logs_execucao:
+        resumo_acoes = "### 🛠️ Ações Executadas pelo Nexora:\n" + "\n\n".join(logs_execucao) + "\n\n---\n"
+        res = resumo_acoes + res
+
+    return res if res else "Ação executada com sucesso pelo Nexora."
 
 @api_app.get("/api/health")
 def api_health():

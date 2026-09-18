@@ -1270,11 +1270,30 @@ function ArquivosView({
 
 function TerminalView({ colabUrl }: { colabUrl: string }) {
   const [comando, setComando] = useState('');
-  const [historicoOutput, setHistoricoOutput] = useState<Array<{ cmd: string; saida: string }>>([
-    { cmd: 'system-check', saida: 'Terminal Web conectado ao Google Colab. Digite comandos bash para executar.' }
-  ]);
+  const [historicoOutput, setHistoricoOutput] = useState<Array<{ cmd: string; saida: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('nexora_terminal_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      { cmd: 'system-check', saida: 'Terminal Web conectado ao Google Colab (GPU L4 24GB). Digite comandos bash para executar.' }
+    ];
+  });
   const [isExecuting, setIsExecuting] = useState(false);
   const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nexora_terminal_history', JSON.stringify(historicoOutput));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [historicoOutput]);
 
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });

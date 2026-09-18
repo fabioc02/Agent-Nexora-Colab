@@ -1,0 +1,8 @@
+# Dependências para o Agente rodar no Colab
+requests==2.31.0
+
+# (Opcional) Dependências para rodar a ponte_local.py no seu PC
+fastapi
+uvicorn
+pyngrok
+pydantic

@@ -282,7 +282,32 @@ function ChatView() {
   const [messages, setMessages] = useState<Array<{role: string, content: string}>>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [colabUrl, setColabUrl] = useState('');
+  const [colabUrl, setColabUrl] = useState(() => localStorage.getItem('nexora_colab_url') || '');
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'connected' | 'error'>('idle');
+
+  // Salva a URL no localStorage
+  const handleUrlChange = (url: string) => {
+    setColabUrl(url);
+    localStorage.setItem('nexora_colab_url', url);
+  };
+
+  // Testa conexão com o Colab
+  const testConnection = async (urlToTest = colabUrl) => {
+    if (!urlToTest.trim()) return;
+    setConnectionStatus('testing');
+    try {
+      const cleanUrl = urlToTest.trim().replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/api/health`, { method: 'GET' });
+      const data = await res.json();
+      if (data.status === 'online') {
+        setConnectionStatus('connected');
+      } else {
+        setConnectionStatus('error');
+      }
+    } catch {
+      setConnectionStatus('error');
+    }
+  };
 
   // Auto-scroll para o fim do chat
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -299,17 +324,22 @@ function ChatView() {
     setIsLoading(true);
 
     try {
-      // Comunica com a nova API (que vamos criar no Colab)
-      const response = await fetch(`${colabUrl.replace(/\/$/, '')}/api/chat`, {
+      const cleanUrl = colabUrl.trim().replace(/\/$/, '');
+      const response = await fetch(`${cleanUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mensagem: userMsg.content })
       });
       
+      if (!response.ok) {
+        throw new Error(`Servidor respondeu com código ${response.status}`);
+      }
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', content: data.resposta }]);
+      setConnectionStatus('connected');
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `[Erro de Conexão] Não foi possível contatar o Colab. Verifique a URL. Erro: ${error}` }]);
+      setConnectionStatus('error');
+      setMessages(prev => [...prev, { role: 'assistant', content: `[Erro de Comunicação] Não foi possível conectar ao Colab. Verifique se a URL da API está ativa. Detalhes: ${error}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -320,14 +350,28 @@ function ChatView() {
       
       {/* Colab URL Setup Header */}
       <div className="p-3 bg-[#111] border-b border-white/5 flex gap-3 items-center">
-        <span className="text-xs text-neutral-500 whitespace-nowrap">Colab API URL:</span>
+        <span className="text-xs text-neutral-400 font-medium whitespace-nowrap flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full ${
+            connectionStatus === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' :
+            connectionStatus === 'testing' ? 'bg-amber-500 animate-pulse' :
+            connectionStatus === 'error' ? 'bg-rose-500' : 'bg-neutral-600'
+          }`} />
+          URL da API Colab:
+        </span>
         <input 
           type="text" 
           value={colabUrl}
-          onChange={(e) => setColabUrl(e.target.value)}
-          placeholder="ex: https://xxx.ngrok-free.app" 
+          onChange={(e) => handleUrlChange(e.target.value)}
+          placeholder="ex: https://xxx.trycloudflare.com ou https://xxx.loca.lt" 
           className="flex-1 bg-black/50 border border-white/10 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500 transition-colors text-white font-mono"
         />
+        <button
+          onClick={() => testConnection()}
+          disabled={connectionStatus === 'testing' || !colabUrl.trim()}
+          className="px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 text-neutral-300 rounded border border-white/10 transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {connectionStatus === 'testing' ? 'Testando...' : connectionStatus === 'connected' ? '✓ Conectado' : 'Testar Conexão'}
+        </button>
       </div>
 
       {/* Chat Messages */}

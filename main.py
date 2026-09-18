@@ -10,7 +10,27 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--bridge_url", type=str, required=True, help="URL do Ngrok do PC local")
 parser.add_argument("--modelo", type=str, default="deepseek-coder:6.7b")
 parser.add_argument("--memoria_dir", type=str, default="./memory")
+parser.add_argument("--api", action="store_true", help="Rodar como servidor HTTP API para a interface web")
+parser.add_argument("--port", type=int, default=5000, help="Porta HTTP para a API")
 args = parser.parse_args()
+
+# --- CONFIGURAÇÃO FASTAPI PARA CONEXÃO COM A INTERFACE WEB ---
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import uvicorn
+
+api_app = FastAPI(title="Nexora Agent API")
+api_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class ChatRequest(BaseModel):
+    mensagem: str
 
 ALLOWED_DRIVE_DIR = "/content/drive/MyDrive/AgentNexora"
 
@@ -179,7 +199,19 @@ def pensar(prompt, historico):
     res = re.sub(r'<EXECUTAR>.*?</EXECUTAR>', '[COMANDO EXECUTADO NO TERMINAL]', res, flags=re.DOTALL)
     return res.strip()
 
-# --- LOOP PRINCIPAL ---
+@api_app.get("/api/health")
+def api_health():
+    return {"status": "online", "model": args.modelo}
+
+@api_app.post("/api/chat")
+def api_chat(req: ChatRequest):
+    historico = carregar_memoria()
+    print(f"\n[Web Interface] Recebeu mensagem: {req.mensagem}")
+    resposta = pensar(req.mensagem, historico)
+    print(f"[Web Interface] Respondeu: {resposta[:60]}...")
+    return {"resposta": resposta}
+
+# --- INICIALIZAÇÃO (TERMINAL OU API WEB) ---
 def iniciar_agente():
     print("="*50)
     print("🤖 NEXORA AGENT AVANÇADO (ANTI-ALUCINAÇÃO ATIVO)")
@@ -197,11 +229,17 @@ def iniciar_agente():
     historico = carregar_memoria()
     print(f"[*] Histórico recarregado: {len(historico)} mensagens.")
 
-    while True:
-        comando = input("\nVocê: ")
-        if comando.lower() in ['sair', 'exit', 'quit']: break
-        resposta = pensar(comando, historico)
-        print(f"\nNexora: {resposta}")
+    if args.api:
+        print(f"\n🚀 Modo Servidor API ativado na porta {args.port}!")
+        print(f"👉 Pronto para receber requisições da Interface Web do AI Studio.")
+        uvicorn.run(api_app, host="0.0.0.0", port=args.port)
+    else:
+        print("\n💬 Modo Terminal ativo. Digite sua mensagem abaixo:")
+        while True:
+            comando = input("\nVocê: ")
+            if comando.lower() in ['sair', 'exit', 'quit']: break
+            resposta = pensar(comando, historico)
+            print(f"\nNexora: {resposta}")
 
 if __name__ == "__main__":
     iniciar_agente()

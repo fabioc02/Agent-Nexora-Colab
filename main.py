@@ -169,35 +169,96 @@ def salvar_local(caminho, conteudo):
         print("Erro ao salvar local:", e)
         return False
 
+# --- SISTEMA DE ENGENHARIA AUTÔNOMA: TOOLCHAINS E COMPILADORES ---
+def preparar_toolchain(tipo):
+    """Garante que compiladores e SDKs estejam instalados no Colab antes da compilação"""
+    logs = []
+    if tipo == "android":
+        print("[Toolchain] Verificando ambiente Android SDK e Gradle...")
+        # Instala JDK 17, Gradle e ferramentas Android básicas no Colab
+        chk_java = subprocess.getoutput("which java && javac -version")
+        if "javac" not in chk_java or "openjdk" not in chk_java.lower():
+            logs.append("⚡ [Toolchain] Instalando OpenJDK 17 e Gradle para Android...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq openjdk-17-jdk gradle aapt zipalign")
+        
+        # Garante variáveis de ambiente Android
+        android_home = "/content/android-sdk"
+        os.environ["JAVA_HOME"] = "/usr/lib/jvm/java-17-openjdk-amd64"
+        if not os.path.exists(android_home):
+            os.makedirs(f"{android_home}/cmdline-tools", exist_ok=True)
+            logs.append("⚡ [Toolchain] Configurando Android SDK Commandline-tools...")
+            cmd_sdk = (
+                f"cd {android_home} && "
+                "wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip && "
+                "unzip -q -o cmdline.zip -d cmdline-tools && "
+                "mv cmdline-tools/cmdline-tools cmdline-tools/latest 2>/dev/null || true && "
+                "rm -f cmdline.zip"
+            )
+            subprocess.getoutput(cmd_sdk)
+        os.environ["ANDROID_HOME"] = android_home
+        os.environ["PATH"] = f"{android_home}/cmdline-tools/latest/bin:{android_home}/platform-tools:" + os.environ.get("PATH", "")
+
+    elif tipo == "windows":
+        print("[Toolchain] Verificando compilador cruzado Windows (MinGW-w64)...")
+        chk_mingw = subprocess.getoutput("which x86_64-w64-mingw32-g++")
+        if not chk_mingw:
+            logs.append("⚡ [Toolchain] Instalando MinGW-w64 para gerar executáveis Windows (.exe)...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq mingw-w64 mingw-w64-tools")
+
+    elif tipo == "linux_gui":
+        print("[Toolchain] Verificando bibliotecas gráficas e multimídia Linux...")
+        chk_sdl = subprocess.getoutput("dpkg -s libsdl2-dev 2>/dev/null | grep Status")
+        if "installed" not in chk_sdl:
+            logs.append("⚡ [Toolchain] Instalando SDL2, Raylib, ALSA e GTK3...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libsdl2-dev libsdl2-mixer-dev libsdl2-image-dev libasound2-dev libraylib-dev libgtk-3-dev cmake build-essential")
+
+    elif tipo == "python_bin":
+        print("[Toolchain] Verificando PyInstaller...")
+        subprocess.getoutput("pip install -q pyinstaller")
+
+    elif tipo == "rust":
+        chk_rust = subprocess.getoutput("which rustc")
+        if not chk_rust:
+            logs.append("⚡ [Toolchain] Instalando Rust & Cargo...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq rustc cargo")
+
+    elif tipo == "go":
+        chk_go = subprocess.getoutput("which go")
+        if not chk_go:
+            logs.append("⚡ [Toolchain] Instalando Go...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq golang-go")
+
+    return "\n".join(logs)
+
 # --- CÉREBRO: OLLAMA LOCAL NO COLAB COM LOOP AGÊNTICO ---
-SYSTEM_PROMPT = """Você é o Nexora, um Agente Executivo de Engenharia de Software rodando no Google Colab (Linux Ubuntu, GPU NVIDIA L4 24GB, 50GB RAM, 200GB Disco, root total).
-Armazenamento permanente persistente no Google Drive: /content/drive/MyDrive/AgentNexora/
+SYSTEM_PROMPT = """Você é o Nexora, um ENGENHEIRO DE SOFTWARE E ARQUITETO DE SISTEMAS SÊNIOR TOTAL no Google Colab.
+Ambiente: Linux Ubuntu (GPU NVIDIA L4 24GB VRAM, 50GB RAM, 200GB Disco NVMe, acesso root total).
+Armazenamento Permanente: /content/drive/MyDrive/AgentNexora/
 
-[REGRA SUPREMA - NUNCA MANDE O USUÁRIO DIGITAR NADA]:
-Você possui acesso root direto ao terminal e aos arquivos.
-NUNCA mande o usuário digitar comandos no terminal.
-NUNCA diga que criar um app é muito complexo.
-Você mesmo DEVE executar as instalações, escrever o código completo e compilar usando as tags:
-1. Para rodar comandos no terminal do Colab (instalações apt-get, compilações g++/cmake, etc):
-<EXECUTAR>comando_aqui</EXECUTAR>
+[SUA IDENTIDADE E CAPACIDADE UNIVERSAL]:
+Você é 100% autônomo. Você não é um chatbot que apenas dá dicas ou códigos pela metade.
+Você projeta, escreve código completo, configura toolchains, compila e entrega aplicativos prontos para:
+1. ANDROID: Apps completos em Kotlin, Java ou C++ NDK, compilados em APK funcional.
+2. DESKTOP LINUX: Apps em C++, Rust, Go, Python ou GTK/SDL2/Raylib compilados em binário nativo ELF x86_64.
+3. DESKTOP WINDOWS: Apps compilados para Windows (.exe) usando cross-compiler MinGW (x86_64-w64-mingw32-g++).
+4. SISTEMAS EMBARCADOS & BACKEND: ESP32/Arduino, microserviços, APIs e bancos de dados.
 
-2. Para salvar código-fonte ou arquivos completos no Colab ou Drive:
-<SALVAR_INICIO>caminho_do_arquivo
-conteudo_do_codigo_aqui
-<SALVAR_FIM>
+[REGRA DE OURO - NUNCA MANDE O USUÁRIO FAZER NADA]:
+Você possui root no terminal do Colab e executa tudo sozinho!
+NUNCA diga para o usuário 'você precisa instalar', 'execute no seu terminal' ou 'criar isso é muito complexo'.
+Você mesmo instala as dependências necessárias via apt-get/pip/sdkmanager, escreve os arquivos e compila!
 
-3. Para listar arquivos:
-<LISTAR>caminho_da_pasta</LISTAR>
-
-4. Para ler arquivos:
-<LER>caminho_do_arquivo</LER>
-
-[EXEMPLO - Quando o usuário pedir para criar um app e compilar]:
-<SALVAR_INICIO>/content/drive/MyDrive/AgentNexora/app.cpp
-#include <iostream>
-int main() { std::cout << "App rodando!" << std::endl; return 0; }
-<SALVAR_FIM>
-<EXECUTAR>g++ -O3 /content/drive/MyDrive/AgentNexora/app.cpp -o /content/drive/MyDrive/AgentNexora/app</EXECUTAR>
+[SUAS FERRAMENTAS EXECUTIVAS - USE AS TAGS]:
+- Para rodar comandos no terminal do Colab (instalações, builds, compilações):
+  <EXECUTAR>comando_bash</EXECUTAR>
+- Para criar e salvar arquivos de código completos:
+  <SALVAR_INICIO>caminho_do_arquivo
+  codigo_completo_sem_cortes
+  <SALVAR_FIM>
+- Para listar pastas:
+  <LISTAR>caminho</LISTAR>
+- Para ler arquivos:
+  <LER>caminho</LER>
 """
 
 def pensar(prompt, historico, contexto=""):
@@ -251,15 +312,15 @@ def pensar(prompt, historico, contexto=""):
         system_content += f"\n\n[CONTEXTO ATIVO DO PROJETO SELECIONADO PELO USUÁRIO]:\n{contexto.strip()}\n"
         
     # Se o usuário pede explicitamente criação, compilação ou instalação, reforça o modo executivo
-    termos_acao = ['compile', 'compilar', 'executavel', 'crie', 'criar', 'instale', 'instalar', 'desenvolva', 'sdk', 'sequenciador', 'groovestation']
+    termos_acao = ['compile', 'compilar', 'executavel', 'crie', 'criar', 'instale', 'instalar', 'desenvolva', 'sdk', 'sequenciador', 'groovestation', 'build']
     if any(t in prompt.lower() for t in termos_acao):
-        system_content += "\n[ORDEM EXECUTIVA]: O usuário pediu para CRIAR, INSTALAR ou COMPILAR. Você DEVE usar obrigatoriamente as tags <SALVAR_INICIO> para o código e <EXECUTAR> para compilar ou instalar no Colab! Não envie explicações teóricas!"
+        system_content += "\n[ORDEM EXECUTIVA]: O usuário pediu para CRIAR, INSTALAR ou COMPILAR. Você é um agente executivo com root. Execute com <EXECUTAR> e salve com <SALVAR_INICIO>. NUNCA diga para o usuário digitar no terminal!"
 
     mensagens_ollama = [{"role": "system", "content": system_content}] + recentes
     
     print(f"[Agente] Pensando (contexto: {len(mensagens_ollama)} msgs)...")
     loop_count = 0
-    max_loops = 3
+    max_loops = 6
     texto_final = ""
     logs_execucao = []
 
@@ -270,8 +331,8 @@ def pensar(prompt, historico, contexto=""):
             "messages": mensagens_ollama,
             "stream": False,
             "options": {
-                "num_ctx": 4096,
-                "num_predict": 2048,
+                "num_ctx": 16384,
+                "num_predict": 4096,
                 "temperature": 0.2,
                 "repeat_penalty": 1.1,
                 "stop": [
@@ -358,70 +419,118 @@ def pensar(prompt, historico, contexto=""):
         if tem_acao:
             continue
             
-        # --- AUTO-INTERCEPTAÇÃO EXECUTIVA SE O MODELO DEU DESCULPAS OU BLOCOS DE CÓDIGO ---
-        # Se o usuário pediu sequenciador / groove / compilador / app em C++ e o modelo gerou bloco de código ```cpp
-        if any(t in prompt.lower() for t in ['groove', 'sequenciador', 'c++', 'app', 'gui', 'sdl', 'raylib']) and "```cpp" in texto:
-            try:
-                codigo_cpp = texto.split("```cpp")[1].split("```")[0].strip()
-                dir_app = "/content/drive/MyDrive/AgentNexora/groovestation"
-                os.makedirs(dir_app, exist_ok=True)
-                arquivo_cpp = os.path.join(dir_app, "main.cpp")
-                with open(arquivo_cpp, 'w', encoding='utf-8') as f:
-                    f.write(codigo_cpp)
-                # Salva também cópia com o nome alternativo que comandos possam buscar
-                with open(os.path.join(dir_app, "groovestation_gui.cpp"), 'w', encoding='utf-8') as f:
-                    f.write(codigo_cpp)
-                with open(os.path.join(dir_app, "sequencer.cpp"), 'w', encoding='utf-8') as f:
-                    f.write(codigo_cpp)
-                logs_execucao.append(f"💾 [Auto-Executivo] Código C++ salvo em `{arquivo_cpp}`")
-                
-                # Detecta bibliotecas necessárias no código e instala automaticamente com apt-get
-                flags_libs = ["-lpthread"]
-                if "SDL2" in codigo_cpp or "SDL.h" in codigo_cpp:
-                    print("[Auto-Dep] Instalando libsdl2-dev no Colab...")
-                    subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libsdl2-dev libsdl2-mixer-dev")
-                    flags_libs.extend(["-lSDL2", "-lSDL2_mixer"])
-                if "raylib" in codigo_cpp:
-                    print("[Auto-Dep] Instalando libraylib-dev no Colab...")
-                    subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libraylib-dev")
-                    flags_libs.extend(["-lraylib", "-lGL", "-lm", "-ldl", "-lrt", "-lX11"])
-                if "asoundlib.h" in codigo_cpp:
-                    print("[Auto-Dep] Instalando libasound2-dev no Colab...")
-                    subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libasound2-dev")
-                    flags_libs.append("-lasound")
+        # --- PROCESSAMENTO EXECUTIVO MULTIPLATAFORMA & SELF-HEALING ---
+        prompt_lower = prompt.lower()
+        
+        # 1. AUTO-IDENTIFICAÇÃO DE TOOLCHAIN NECESSÁRIA
+        if any(w in prompt_lower for w in ['android', 'apk', 'gradle']):
+            tool_log = preparar_toolchain("android")
+            if tool_log: logs_execucao.append(tool_log)
+        elif any(w in prompt_lower for w in ['windows', '.exe', 'mingw']):
+            tool_log = preparar_toolchain("windows")
+            if tool_log: logs_execucao.append(tool_log)
+        elif any(w in prompt_lower for w in ['sdl', 'gui', 'raylib', 'gtk', 'desktop', 'groove', 'sequenciador']):
+            tool_log = preparar_toolchain("linux_gui")
+            if tool_log: logs_execucao.append(tool_log)
 
-                flags_str = " ".join(flags_libs)
-                out_name = "groovestation_gui" if any(k in prompt.lower() or k in codigo_cpp.lower() for k in ['gui', 'sdl', 'raylib', 'window']) else "groovestation"
-                bin_alvo = os.path.join(dir_app, out_name)
-                
-                # Executa a compilação com g++
-                cmd_compilar = f"g++ -O3 {arquivo_cpp} {flags_str} -o {bin_alvo}"
-                print(f"[Auto-Compilação] {cmd_compilar}")
-                out_comp = subprocess.getoutput(cmd_compilar)
-                
-                # Cria também symlink ou cópia para groovestation
-                if os.path.exists(bin_alvo):
-                    os.chmod(bin_alvo, 0o755)
-                    # Cria cópia para garantir que ambos os nomes existam
-                    if out_name == "groovestation_gui":
-                        subprocess.getoutput(f"cp -f {bin_alvo} {dir_app}/groovestation")
-                    logs_execucao.append(f"⚡ [Auto-Executivo] Compilado com sucesso para Linux nativo (ELF x86_64)!\nExecutável gerado: `{bin_alvo}` ({os.path.getsize(bin_alvo)} bytes)")
+        # 2. Se o modelo gerou bloco de código ```cpp, ```java, ```kotlin, ```python
+        for lang in ['cpp', 'c', 'java', 'kotlin', 'python', 'py']:
+            tag_code = f"```{lang}"
+            if tag_code in texto:
+                try:
+                    codigo_bloco = texto.split(tag_code)[1].split("```")[0].strip()
+                    if len(codigo_bloco) > 30:
+                        # Define diretório de destino
+                        if any(w in prompt_lower for w in ['android', 'apk']):
+                            dir_proj = "/content/drive/MyDrive/AgentNexora/AndroidApps/app"
+                            os.makedirs(f"{dir_proj}/src/main/java", exist_ok=True)
+                            ext = "kt" if lang == "kotlin" else "java"
+                            arq_dest = f"{dir_proj}/src/main/java/MainActivity.{ext}"
+                        elif any(w in prompt_lower for w in ['windows', '.exe']):
+                            dir_proj = "/content/drive/MyDrive/AgentNexora/WindowsApps"
+                            os.makedirs(dir_proj, exist_ok=True)
+                            arq_dest = f"{dir_proj}/main.cpp"
+                        else:
+                            dir_proj = "/content/drive/MyDrive/AgentNexora/groovestation"
+                            os.makedirs(dir_proj, exist_ok=True)
+                            arq_dest = f"{dir_proj}/main.cpp"
+                            
+                        with open(arq_dest, 'w', encoding='utf-8') as f:
+                            f.write(codigo_bloco)
+                        logs_execucao.append(f"💾 [Auto-Salvo]: `{arq_dest}`")
+                except Exception as e:
+                    logs_execucao.append(f"Erro ao salvar código {lang}: {e}")
+
+        # 3. Executa TODOS os blocos bash sugeridos pelo modelo
+        blocos_bash = re.findall(r'```(?:bash|sh)?\n?(.*?)```', texto, re.DOTALL)
+        for bloco in blocos_bash:
+            for linha in bloco.strip().split("\n"):
+                cmd_s = linha.strip()
+                if cmd_s and not cmd_s.startswith("#"):
+                    if any(k in cmd_s for k in ['apt', 'pip', 'g++', 'gcc', 'make', 'cmake', 'mkdir', 'chmod', 'git', 'gradle', 'sdkmanager', 'x86_64']):
+                        cmd_limpo = cmd_s.replace("sudo ", "")
+                        print(f"[Auto-Exec Bash] {cmd_limpo}")
+                        out_s = subprocess.getoutput(cmd_limpo)
+                        logs_execucao.append(f"⚡ [Terminal Colab]: `{cmd_limpo}`\n```\n{out_s[:400]}\n```")
+
+        # 4. COMPILAÇÃO UNIVERSAL E SELF-HEALING
+        pediu_build = any(w in prompt_lower for w in ['compile', 'compilar', 'compila', 'build', 'executavel', 'apk', 'gerar', 'crie'])
+        
+        # A) Compilação Windows (.exe)
+        if ('windows' in prompt_lower or '.exe' in prompt_lower) and pediu_build:
+            dir_win = "/content/drive/MyDrive/AgentNexora/WindowsApps"
+            src_win = f"{dir_win}/main.cpp"
+            if os.path.exists(src_win):
+                preparar_toolchain("windows")
+                out_exe = f"{dir_win}/app.exe"
+                cmd_win = f"x86_64-w64-mingw32-g++ -O3 {src_win} -o {out_exe} -static-libgcc -static-libstdc++"
+                out_res = subprocess.getoutput(cmd_win)
+                if os.path.exists(out_exe):
+                    logs_execucao.append(f"🎉 **[EXECUTÁVEL WINDOWS GERADO COM SUCESSO!]**\n- Arquivo: `{out_exe}` ({os.path.getsize(out_exe)} bytes)\n- Formato: PE32+ executable (x86_64 Windows .exe)")
                 else:
-                    logs_execucao.append(f"⚠️ [Falha na Compilação g++]:\n```\n{out_comp[:600]}\n```")
-            except Exception as e:
-                logs_execucao.append(f"Erro auto-executivo: {e}")
+                    logs_execucao.append(f"⚠️ [Tentativa MinGW]:\n```\n{out_res[:500]}\n```")
 
-        # Se o modelo sugeriu comandos bash tipo ```bash apt-get ... ``` ou ```bash g++ ... ```
-        if "```bash" in texto and any(t in prompt.lower() for t in ['instale', 'compile', 'crie', 'rodar', 'execute']):
+        # B) Compilação Android (APK)
+        elif ('android' in prompt_lower or 'apk' in prompt_lower) and pediu_build:
+            dir_apk = "/content/drive/MyDrive/AgentNexora/AndroidApps"
+            os.makedirs(dir_apk, exist_ok=True)
+            logs_execucao.append("📱 [Android Pipeline Ativo] Ambiente pronto com JDK 17, Gradle e Android SDK.")
+
+        # C) Compilação Linux Desktop / GUI (C++ / SDL2 / Raylib)
+        elif os.path.exists("/content/drive/MyDrive/AgentNexora/groovestation/main.cpp") and pediu_build:
+            dir_app = "/content/drive/MyDrive/AgentNexora/groovestation"
+            arquivo_cpp = f"{dir_app}/main.cpp"
             try:
-                comandos_sugeridos = texto.split("```bash")[1].split("```")[0].strip().split("\n")
-                for cmd_s in comandos_sugeridos:
-                    cmd_s = cmd_s.strip()
-                    if cmd_s and not cmd_s.startswith("#") and any(k in cmd_s for k in ['apt', 'pip', 'g++', 'make', 'cmake', 'mkdir', 'git']):
-                        out_s = subprocess.getoutput(cmd_s)
-                        logs_execucao.append(f"⚡ [Auto-Executado no Colab]: `{cmd_s}`\n```\n{out_s[:400]}\n```")
+                conteudo_cpp = open(arquivo_cpp, 'r', encoding='utf-8', errors='ignore').read()
+                flags = ["-lpthread"]
+                if "SDL2" in conteudo_cpp or "SDL.h" in conteudo_cpp:
+                    preparar_toolchain("linux_gui")
+                    flags.extend(["-lSDL2", "-lSDL2_mixer"])
+                if "raylib" in conteudo_cpp:
+                    preparar_toolchain("linux_gui")
+                    flags.extend(["-lraylib", "-lGL", "-lm", "-ldl", "-lrt", "-lX11"])
+                if "asoundlib.h" in conteudo_cpp:
+                    flags.append("-lasound")
+
+                flags_str = " ".join(flags)
+                bin_gui = os.path.join(dir_app, "groovestation_gui")
+                bin_cli = os.path.join(dir_app, "groovestation")
+
+                cmd_comp = f"g++ -O3 {arquivo_cpp} {flags_str} -o {bin_gui}"
+                out_c = subprocess.getoutput(cmd_comp)
+
+                if os.path.exists(bin_gui):
+                    os.chmod(bin_gui, 0o755)
+                    subprocess.getoutput(f"cp -f {bin_gui} {bin_cli}")
+                    os.chmod(bin_cli, 0o755)
+                    logs_execucao.append(f"🎉 **[SUCESSO] Compilação Linux Concluída no Colab (GPU L4)!**\n"
+                                         f"- Executável GUI: `{bin_gui}` ({os.path.getsize(bin_gui)} bytes)\n"
+                                         f"- Formato: ELF 64-bit x86-64 nativo Linux\n"
+                                         f"- Salvo permanentemente no Google Drive!")
+                else:
+                    logs_execucao.append(f"⚠️ [Erro na Compilação g++]:\n```\n{out_c[:600]}\n```")
             except Exception as e:
-                logs_execucao.append(f"Erro ao auto-executar comando sugerido: {e}")
+                logs_execucao.append(f"Erro na rotina de compilação: {e}")
 
         break # Terminar loop
 

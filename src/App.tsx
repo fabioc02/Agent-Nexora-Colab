@@ -859,6 +859,39 @@ function ChatView({
         <div ref={messagesEndRef} />
       </div>
       
+      {/* Quick Action Chips para Engenharia Multiplataforma */}
+      <div className="px-4 py-2 bg-[#141414] border-t border-white/5 flex items-center gap-2 overflow-x-auto text-xs no-scrollbar">
+        <span className="text-neutral-500 text-[10px] font-mono shrink-0 uppercase tracking-wider">Ações Rápidas:</span>
+        <button
+          type="button"
+          onClick={() => setInput("Crie um aplicativo Android completo, configure o Gradle, compile e salve o APK final em /content/drive/MyDrive/AgentNexora/AndroidApps/")}
+          className="px-2.5 py-1 bg-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-300 text-neutral-400 rounded-full border border-white/5 transition-all shrink-0 flex items-center gap-1.5"
+        >
+          📱 <span>App Android (APK)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setInput("Crie um app desktop para Windows em C++ com MinGW, compile e gere o executável app.exe para Windows")}
+          className="px-2.5 py-1 bg-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-300 text-neutral-400 rounded-full border border-white/5 transition-all shrink-0 flex items-center gap-1.5"
+        >
+          🪟 <span>App Windows (.exe)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setInput("Compile o groovestation com interface gráfica SDL2, instale as dependências com apt-get e salve o executável groovestation_gui")}
+          className="px-2.5 py-1 bg-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-300 text-neutral-400 rounded-full border border-white/5 transition-all shrink-0 flex items-center gap-1.5"
+        >
+          🐧 <span>Linux GUI (SDL2/C++)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setInput("!which java javac gradle x86_64-w64-mingw32-g++ g++ cmake rustc python3")}
+          className="px-2.5 py-1 bg-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-300 text-neutral-400 rounded-full border border-white/5 transition-all shrink-0 flex items-center gap-1.5"
+        >
+          🔍 <span>Verificar Compiladores</span>
+        </button>
+      </div>
+
       {/* Input Area */}
       <div className="p-4 bg-[#111] border-t border-white/5 flex gap-3">
         <input 

@@ -18,15 +18,23 @@ ALLOWED_DRIVE_DIR = "/content/drive/MyDrive/AgentNexora"
 def carregar_memoria():
     caminho = os.path.join(args.memoria_dir, "historico.json")
     if os.path.exists(caminho):
-        with open(caminho, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            with open(caminho, 'r', encoding='utf-8') as f:
+                dados = json.load(f)
+                if isinstance(dados, list):
+                    return dados
+        except Exception:
+            return []
     return []
 
 def salvar_memoria(historico):
-    os.makedirs(args.memoria_dir, exist_ok=True)
-    caminho = os.path.join(args.memoria_dir, "historico.json")
-    with open(caminho, 'w', encoding='utf-8') as f:
-        json.dump(historico, f, indent=4)
+    try:
+        os.makedirs(args.memoria_dir, exist_ok=True)
+        caminho = os.path.join(args.memoria_dir, "historico.json")
+        with open(caminho, 'w', encoding='utf-8') as f:
+            json.dump(historico, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print("[Aviso] Erro ao salvar memória:", e)
 
 # --- FUNÇÕES DE ACESSO AO PC (PONTE LOCAL) ---
 def ler_pc(caminho):
@@ -179,10 +187,12 @@ def iniciar_agente():
     print(f"🔒 SandBox do Drive: {ALLOWED_DRIVE_DIR}")
     print("="*50)
     
-    # Forçar limpeza do histórico antigo para o Agente esquecer a "personalidade amarela" antiga
+    # Inicializa o arquivo de memória caso não exista ou esteja vazio
     os.makedirs(args.memoria_dir, exist_ok=True)
-    with open(os.path.join(args.memoria_dir, "historico.json"), 'w', encoding='utf-8') as f:
-        json.dump([], f)
+    caminho_hist = os.path.join(args.memoria_dir, "historico.json")
+    if not os.path.exists(caminho_hist) or os.path.getsize(caminho_hist) == 0:
+        with open(caminho_hist, 'w', encoding='utf-8') as f:
+            json.dump([], f)
     
     historico = carregar_memoria()
     print(f"[*] Histórico recarregado: {len(historico)} mensagens.")

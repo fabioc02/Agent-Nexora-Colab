@@ -12,7 +12,7 @@ class FileReq(BaseModel):
 
 def pedir_permissao(acao: str, arquivo: str):
     print(f"\n[⚠️ ALERTA DE SEGURANÇA] O agente solicitou permissão para {acao}:")
-    print(f"   Arquivo: {arquivo}")
+    print(f"   Arquivo/Diretório: {arquivo}")
     resp = input("Permitir? [s/n]: ")
     if resp.lower() != 's':
         print("[!] Bloqueado pelo usuário.")
@@ -22,7 +22,7 @@ def pedir_permissao(acao: str, arquivo: str):
 @app.post("/ler_arquivo")
 def ler_arquivo(req: FileReq):
     pedir_permissao("LER", req.caminho)
-    caminho_completo = os.path.join(BASE_DIR, req.caminho)
+    caminho_completo = req.caminho if req.caminho.startswith('/') else os.path.join(BASE_DIR, req.caminho)
     try:
         with open(caminho_completo, 'r', encoding='utf-8', errors='ignore') as f:
             return {"conteudo": f.read()}
@@ -32,7 +32,7 @@ def ler_arquivo(req: FileReq):
 @app.post("/salvar_arquivo")
 def salvar_arquivo(req: FileReq):
     pedir_permissao("MODIFICAR/CRIAR", req.caminho)
-    caminho_completo = os.path.join(BASE_DIR, req.caminho)
+    caminho_completo = req.caminho if req.caminho.startswith('/') else os.path.join(BASE_DIR, req.caminho)
     try:
         os.makedirs(os.path.dirname(caminho_completo), exist_ok=True)
         with open(caminho_completo, 'w', encoding='utf-8') as f:
@@ -44,11 +44,7 @@ def salvar_arquivo(req: FileReq):
 @app.post("/listar_arquivos")
 def listar_arquivos(req: FileReq):
     pedir_permissao("LISTAR DIRETÓRIO", req.caminho)
-    
-    if req.caminho.startswith('/'):
-        caminho_completo = req.caminho
-    else:
-        caminho_completo = os.path.join(BASE_DIR, req.caminho)
+    caminho_completo = req.caminho if req.caminho.startswith('/') else os.path.join(BASE_DIR, req.caminho)
         
     try:
         if not os.path.exists(caminho_completo):
@@ -66,8 +62,8 @@ def listar_arquivos(req: FileReq):
 if __name__ == "__main__":
     import uvicorn
     
-    # Substitua "COLE_SEU_TOKEN_AQUI" pelo seu token real (mantenha as aspas)
-    ngrok.set_auth_token("3If7VYUjK42guifVgyVg5QwDfYP_29mHaGB8LqNNwvrU1Re1h")
+    # Configure seu token caso não esteja configurado no sistema
+    # ngrok.set_auth_token("SEU_TOKEN_AQUI")
     
     url_publica = ngrok.connect(8000)
     print("\n" + "="*50)

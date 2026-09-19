@@ -695,9 +695,12 @@ function ChatView({
       clearTimeout(timeoutId);
       setConnectionStatus('error');
       const isTimeout = error.name === 'AbortError';
-      const msgErro = isTimeout 
-        ? '[Tempo Limite Excedido (95s)] O modelo demorou para responder. O histórico pode ter ficado longo. Clique em "Limpar Chat" para resetar a memória rápida e tente novamente!'
-        : `[Erro de Comunicação] Não foi possível contatar o Colab. Verifique se a célula do Cloudflare ainda está ativa no Colab. Detalhes: ${error.message || error}`;
+      let msgErro = `[Erro de Comunicação] Não foi possível contatar o Colab. Verifique se a célula do Cloudflare ainda está ativa no Colab. Detalhes: ${error.message || error}`;
+      if (isTimeout) {
+        msgErro = '[Tempo Limite Excedido] A compilação ou geração demorou mais que o esperado. O histórico pode ter ficado extenso. Clique em "Limpar Chat" para resetar a memória rápida e verifique os arquivos gerados no Drive!';
+      } else if (error.message?.includes('NetworkError') || error.message?.includes('Failed to fetch')) {
+        msgErro = `[Túnel Desconectado ou Nova URL Gerada] Não foi possível contatar o Colab. Verifique se a célula do Colab continua rodando no navegador e se a URL do Cloudflare no topo da página corresponde à URL impressa na célula do Colab (cada execução do Colab gera um link novo).`;
+      }
       setMessages(prev => [...prev, { role: 'assistant', content: msgErro }]);
     } finally {
       setIsLoading(false);

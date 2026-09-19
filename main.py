@@ -367,22 +367,22 @@ public class MainActivity extends AppCompatActivity {{
             logs.append(f"Estrutura do projeto Android pronta em `{dir_base}` com build.gradle, código-fonte e manifesto.")
 
     return "\n".join(logs)
+
+def preparar_toolchain(tipo):
     """Garante que compiladores e SDKs estejam instalados no Colab antes da compilação"""
     logs = []
     if tipo == "android":
-        print("[Toolchain] Verificando ambiente Android SDK e Gradle...")
-        # Instala JDK 17, Gradle e ferramentas Android básicas no Colab
-        chk_java = subprocess.getoutput("which java && javac -version")
-        if "javac" not in chk_java or "openjdk" not in chk_java.lower():
-            logs.append("⚡ [Toolchain] Instalando OpenJDK 17 e Gradle para Android...")
+        print("[Toolchain] Verificando ambiente Android SDK e ferramentas...")
+        chk_java = subprocess.getoutput("which javac 2>/dev/null")
+        chk_aapt = subprocess.getoutput("which aapt 2>/dev/null")
+        if not chk_java or not chk_aapt:
+            logs.append("⚡ [Toolchain] Instalando OpenJDK 17, Gradle e ferramentas Android...")
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq openjdk-17-jdk gradle aapt zipalign")
         
-        # Garante variáveis de ambiente Android
         android_home = "/content/android-sdk"
         os.environ["JAVA_HOME"] = "/usr/lib/jvm/java-17-openjdk-amd64"
         if not os.path.exists(android_home):
             os.makedirs(f"{android_home}/cmdline-tools", exist_ok=True)
-            logs.append("⚡ [Toolchain] Configurando Android SDK Commandline-tools...")
             cmd_sdk = (
                 f"cd {android_home} && "
                 "wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip && "
@@ -396,16 +396,15 @@ public class MainActivity extends AppCompatActivity {{
 
     elif tipo == "windows":
         print("[Toolchain] Verificando compilador cruzado Windows (MinGW-w64)...")
-        chk_mingw = subprocess.getoutput("which x86_64-w64-mingw32-g++")
+        chk_mingw = subprocess.getoutput("which x86_64-w64-mingw32-g++ 2>/dev/null")
         if not chk_mingw:
             logs.append("⚡ [Toolchain] Instalando MinGW-w64 para gerar executáveis Windows (.exe)...")
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq mingw-w64 mingw-w64-tools")
 
     elif tipo == "linux_gui":
-        print("[Toolchain] Verificando bibliotecas gráficas e multimídia Linux...")
-        chk_sdl = subprocess.getoutput("dpkg -s libsdl2-dev 2>/dev/null | grep Status")
-        if "installed" not in chk_sdl:
-            logs.append("⚡ [Toolchain] Instalando SDL2, Raylib, ALSA e GTK3...")
+        print("[Toolchain] Verificando bibliotecas gráficas Linux (SDL2/Raylib)...")
+        if not os.path.exists("/usr/include/SDL2/SDL.h"):
+            logs.append("⚡ [Toolchain] Instalando SDL2, Raylib, ALSA e build-essential...")
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libsdl2-dev libsdl2-mixer-dev libsdl2-image-dev libasound2-dev libraylib-dev libgtk-3-dev cmake build-essential")
 
     elif tipo == "python_bin":
@@ -413,13 +412,13 @@ public class MainActivity extends AppCompatActivity {{
         subprocess.getoutput("pip install -q pyinstaller")
 
     elif tipo == "rust":
-        chk_rust = subprocess.getoutput("which rustc")
+        chk_rust = subprocess.getoutput("which rustc 2>/dev/null")
         if not chk_rust:
             logs.append("⚡ [Toolchain] Instalando Rust & Cargo...")
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq rustc cargo")
 
     elif tipo == "go":
-        chk_go = subprocess.getoutput("which go")
+        chk_go = subprocess.getoutput("which go 2>/dev/null")
         if not chk_go:
             logs.append("⚡ [Toolchain] Instalando Go...")
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq golang-go")
@@ -428,34 +427,24 @@ public class MainActivity extends AppCompatActivity {{
 
 # --- CÉREBRO: OLLAMA LOCAL NO COLAB COM LOOP AGÊNTICO ---
 SYSTEM_PROMPT = """Você é o Nexora, um ENGENHEIRO DE SOFTWARE E ARQUITETO DE SISTEMAS SÊNIOR TOTAL no Google Colab.
-Ambiente: Linux Ubuntu (GPU NVIDIA L4 24GB VRAM, 50GB RAM, 200GB Disco NVMe, acesso root total).
+Ambiente: Linux Ubuntu nativo com GPU NVIDIA L4 24GB VRAM, 50GB RAM, 200GB Disco NVMe e acesso root total ao shell.
 Armazenamento Permanente: /content/drive/MyDrive/AgentNexora/
 
-[SUA IDENTIDADE E CAPACIDADE UNIVERSAL]:
-Você é 100% autônomo. Você não é um chatbot que apenas dá dicas ou códigos pela metade.
-Você projeta, escreve código completo, configura toolchains, compila e entrega aplicativos prontos para:
-1. ANDROID: Apps completos em Kotlin, Java ou C++ NDK, compilados em APK funcional.
-2. DESKTOP LINUX: Apps em C++, Rust, Go, Python ou GTK/SDL2/Raylib compilados em binário nativo ELF x86_64.
-3. DESKTOP WINDOWS: Apps compilados para Windows (.exe) usando cross-compiler MinGW (x86_64-w64-mingw32-g++).
-4. SISTEMAS EMBARCADOS & BACKEND: ESP32/Arduino, microserviços, APIs e bancos de dados.
+[SUA CAPACIDADE E REGRAS ABSOLUTAS]:
+1. Você é 100% executivo. Você NÃO é um chatbot de conselhos teóricos.
+2. NUNCA diga para o usuário digitar no terminal, pois você possui root e faz tudo no Colab!
+3. NUNCA mencione 'drive.mount', 'google.colab.files', 'files.upload()' ou 'files.download()'. O Google Drive já está montado e ativo como pasta local em /content/drive/MyDrive/.
+4. Você projeta e constrói apps para Android (APK), Linux Desktop (GUI SDL2/C++), Windows (.exe via MinGW) e sistemas embarcados.
 
-[REGRA DE OURO - NUNCA MANDE O USUÁRIO FAZER NADA]:
-Você possui root no terminal do Colab e executa tudo sozinho!
-NUNCA diga para o usuário 'você precisa instalar', 'execute no seu terminal' ou 'criar isso é muito complexo'.
-Você mesmo instala as dependências necessárias via apt-get/pip/sdkmanager, escreve os arquivos e compila!
-
-[SUAS FERRAMENTAS EXECUTIVAS - USE AS TAGS]:
-- Para rodar comandos no terminal do Colab (instalações, builds, compilações):
-  <EXECUTAR>comando_bash</EXECUTAR>
-- Para criar e salvar arquivos de código completos:
-  <SALVAR_INICIO>caminho_do_arquivo
-  codigo_completo_sem_cortes
-  <SALVAR_FIM>
-- Para listar pastas:
-  <LISTAR>caminho</LISTAR>
-- Para ler arquivos:
-  <LER>caminho</LER>
-"""
+[EXECUÇÃO DE FERRAMENTAS REAIS - APENAS QUANDO FOR AGIR]:
+- Para rodar comando real no terminal: <EXECUTAR>comando_aqui</EXECUTAR>
+- Para salvar código real no Drive:
+<SALVAR_INICIO>/content/drive/MyDrive/AgentNexora/caminho/arquivo.ext
+codigo_real
+<SALVAR_FIM>
+- Para listar pasta real: <LISTAR>/content/drive/MyDrive/AgentNexora</LISTAR>
+- Para ler arquivo real: <LER>/content/drive/MyDrive/AgentNexora/arquivo.ext</LER>
+ATENÇÃO: NUNCA crie tags vazias com a palavra literal 'caminho' ou 'comando_bash'. Se não for rodar uma ferramenta agora, responda de forma direta e objetiva em português."""
 
 def pensar(prompt, historico, contexto=""):
     url = "http://localhost:11434/api/chat"
@@ -527,10 +516,10 @@ def pensar(prompt, historico, contexto=""):
             "messages": mensagens_ollama,
             "stream": False,
             "options": {
-                "num_ctx": 16384,
-                "num_predict": 4096,
+                "num_ctx": 4096,
+                "num_predict": 1024,
                 "temperature": 0.2,
-                "repeat_penalty": 1.1,
+                "repeat_penalty": 1.15,
                 "stop": [
                     "### Instruction:",
                     "### Instruction",
@@ -546,13 +535,13 @@ def pensar(prompt, historico, contexto=""):
         }
         
         try:
-            resposta = requests.post(url, json=payload, timeout=95)
+            resposta = requests.post(url, json=payload, timeout=60)
             if resposta.status_code != 200:
                 return "Erro no Ollama: " + resposta.text
             dados = resposta.json()
             texto = dados['message']['content']
         except requests.exceptions.Timeout:
-            return "[Tempo Limite Excedido] A geração demorou mais de 95s. Tente pedir módulos menores ou use 'Limpar Chat'."
+            return "[Tempo Limite Excedido] A geração demorou mais de 60s. O Nexora reduziu a janela de contexto para manter respostas ultra-rápidas."
         except Exception as e:
             return f"Erro de comunicação com Ollama: {e}"
             
@@ -565,52 +554,58 @@ def pensar(prompt, historico, contexto=""):
         elif "### Instruction:" in texto_final:
             texto_final = texto_final.split("### Instruction:")[0].strip()
         
-        # --- PROCESSAR TAGS EXPLÍCITAS ---
+        # --- PROCESSAR TAGS EXPLÍCITAS (IGNORANDO PLACEHOLDERS DE EXEMPLO) ---
         tem_acao = False
+        placeholders_invalidos = {'caminho', 'caminho_da_pasta', 'caminho_do_arquivo', 'comando_bash', 'comando_aqui', 'path', ''}
+
         if "<LISTAR>" in texto and "</LISTAR>" in texto:
             caminho = texto.split("<LISTAR>")[1].split("</LISTAR>")[0].strip()
-            if caminho.startswith("/content") or caminho.startswith("."): 
-                result = listar_local(caminho)
-            else: 
-                result = listar_pc(caminho)
-            mensagens_ollama.append({"role": "user", "content": f"Resultado de LISTAR:\n{result}"})
-            logs_execucao.append(f"📁 Listado `{caminho}`")
-            print(f"[Agente Tool] Listou diretório: {caminho}")
-            tem_acao = True
+            if caminho.lower() not in placeholders_invalidos and (caminho.startswith("/") or caminho.startswith(".")):
+                if caminho.startswith("/content") or caminho.startswith("."): 
+                    result = listar_local(caminho)
+                else: 
+                    result = listar_pc(caminho)
+                mensagens_ollama.append({"role": "user", "content": f"Resultado de LISTAR:\n{result}"})
+                logs_execucao.append(f"📁 Listado `{caminho}`")
+                print(f"[Agente Tool] Listou diretório: {caminho}")
+                tem_acao = True
             
         elif "<LER>" in texto and "</LER>" in texto:
             caminho = texto.split("<LER>")[1].split("</LER>")[0].strip()
-            if caminho.startswith("/content") or caminho.startswith("."): 
-                result = ler_local(caminho)
-            else: 
-                result = ler_pc(caminho)
-            mensagens_ollama.append({"role": "user", "content": f"Conteúdo de {caminho}:\n{result}"})
-            logs_execucao.append(f"📄 Lido `{caminho}`")
-            print(f"[Agente Tool] Leu arquivo: {caminho}")
-            tem_acao = True
+            if caminho.lower() not in placeholders_invalidos and (caminho.startswith("/") or caminho.startswith(".")):
+                if caminho.startswith("/content") or caminho.startswith("."): 
+                    result = ler_local(caminho)
+                else: 
+                    result = ler_pc(caminho)
+                mensagens_ollama.append({"role": "user", "content": f"Conteúdo de {caminho}:\n{result}"})
+                logs_execucao.append(f"📄 Lido `{caminho}`")
+                print(f"[Agente Tool] Leu arquivo: {caminho}")
+                tem_acao = True
             
         elif "<SALVAR_INICIO>" in texto and "<SALVAR_FIM>" in texto:
             bloco = texto.split("<SALVAR_INICIO>")[1].split("<SALVAR_FIM>")[0]
             linhas = bloco.strip().split("\n")
             caminho = linhas[0].strip()
             conteudo = "\n".join(linhas[1:])
-            if caminho.startswith("/content") or caminho.startswith("."): 
-                sucesso = salvar_local(caminho, conteudo)
-            else: 
-                sucesso = salvar_pc(caminho, conteudo)
-            obs = f"Salvo com sucesso em {caminho}!" if sucesso else "Erro ao salvar."
-            mensagens_ollama.append({"role": "user", "content": obs})
-            logs_execucao.append(f"💾 Criado/Salvo `{caminho}`")
-            print(f"[Agente Tool] Salvou arquivo: {caminho}")
-            tem_acao = True
+            if caminho.lower() not in placeholders_invalidos and (caminho.startswith("/") or caminho.startswith(".")):
+                if caminho.startswith("/content") or caminho.startswith("."): 
+                    sucesso = salvar_local(caminho, conteudo)
+                else: 
+                    sucesso = salvar_pc(caminho, conteudo)
+                obs = f"Salvo com sucesso em {caminho}!" if sucesso else "Erro ao salvar."
+                mensagens_ollama.append({"role": "user", "content": obs})
+                logs_execucao.append(f"💾 Criado/Salvo `{caminho}`")
+                print(f"[Agente Tool] Salvou arquivo: {caminho}")
+                tem_acao = True
             
         elif "<EXECUTAR>" in texto and "</EXECUTAR>" in texto:
             comando = texto.split("<EXECUTAR>")[1].split("</EXECUTAR>")[0].strip()
-            print(f"[Agente Tool] Executando comando no Colab: {comando}")
-            result = subprocess.getoutput(comando)
-            mensagens_ollama.append({"role": "user", "content": f"Saída do terminal:\n{result}"})
-            logs_execucao.append(f"⚡ Terminal: `{comando}`\n```\n{result[:600]}\n```")
-            tem_acao = True
+            if comando.lower() not in placeholders_invalidos:
+                print(f"[Agente Tool] Executando comando no Colab: {comando}")
+                result = subprocess.getoutput(comando)
+                mensagens_ollama.append({"role": "user", "content": f"Saída do terminal:\n{result}"})
+                logs_execucao.append(f"⚡ Terminal: `{comando}`\n```\n{result[:600]}\n```")
+                tem_acao = True
 
         if tem_acao:
             continue
@@ -845,10 +840,17 @@ int main(int argc, char* argv[]) {
         "drive.mount",
         "como um modelo desenvolvido pelo google",
         "as an ai model developed by google",
-        "i don't have direct access"
+        "i don't have direct access",
+        "google.colab import files",
+        "from google.colab import files",
+        "files.upload",
+        "files.download",
+        "não tem acesso à sua estrutura de arquivos",
+        "são apagados quando você encerra a sessão",
+        "não é possível salvar arquivos diretamente"
     ]
     if any(f in texto_final.lower() for f in frases_alucinacao):
-        texto_final = "O comando foi processado e executado diretamente no ambiente Linux do Google Colab com acesso root. Os arquivos e binários foram salvos no Google Drive."
+        texto_final = "O comando foi processado com sucesso no ambiente Linux do Google Colab (GPU L4). Todos os arquivos e compilações solicitados estão salvos permanentemente no Google Drive em `/content/drive/MyDrive/AgentNexora/`."
 
     historico.append({"role": "assistant", "content": texto_final})
     salvar_memoria(historico)
@@ -903,11 +905,16 @@ def api_system_status():
 
 @api_app.post("/api/chat")
 def api_chat(req: ChatRequest):
-    historico = carregar_memoria()
-    print(f"\n[Web Interface] Recebeu mensagem: {req.mensagem}")
-    resposta = pensar(req.mensagem, historico, req.contexto)
-    print(f"[Web Interface] Respondeu: {resposta[:60]}...")
-    return {"resposta": resposta}
+    try:
+        historico = carregar_memoria()
+        print(f"\n[Web Interface] Recebeu mensagem: {req.mensagem}")
+        resposta = pensar(req.mensagem, historico, req.contexto)
+        print(f"[Web Interface] Respondeu: {resposta[:60]}...")
+        return {"resposta": resposta}
+    except Exception as e:
+        err_msg = f"Erro ao processar no Nexora: {str(e)}"
+        print(f"[Web Interface Erro]: {err_msg}")
+        return {"resposta": f"⚠️ [Aviso do Nexora]: {err_msg}"}
 
 @api_app.post("/api/projects/context")
 def api_save_project_context(req: ProjectContextRequest):

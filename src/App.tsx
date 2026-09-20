@@ -4,7 +4,8 @@ import {
   Terminal as TerminalIcon, GitBranch, Github, Settings, 
   Bot, CheckCircle2, ChevronRight, Play, Download, Upload,
   RefreshCw, Lock, Cpu, HardDrive, Wifi, WifiOff, FileText,
-  Save, Plus, ArrowLeft, Copy, Check, Trash2, ExternalLink
+  Save, Plus, ArrowLeft, Copy, Check, Trash2, ExternalLink,
+  Server, Globe, ShieldCheck
 } from 'lucide-react';
 
 type View = 'dashboard' | 'projetos' | 'chat' | 'arquivos' | 'terminal' | 'git' | 'github' | 'config';
@@ -1766,6 +1767,22 @@ function ConfigView({
 }) {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [bridgeUrlInput, setBridgeUrlInput] = useState(status?.bridge_url || '');
+  const [isSavingBridge, setIsSavingBridge] = useState(false);
+  const [bridgeFeedback, setBridgeFeedback] = useState<string | null>(null);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status?.bridge_url && !bridgeUrlInput) {
+      setBridgeUrlInput(status.bridge_url);
+    }
+  }, [status?.bridge_url]);
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCmd(id);
+    setTimeout(() => setCopiedCmd(null), 2000);
+  };
 
   const handleDetailedTest = async () => {
     if (!colabUrl.trim()) {
@@ -1781,48 +1798,87 @@ function ConfigView({
       const latency = Math.round(performance.now() - start);
       if (res.ok) {
         const data = await res.json();
-        setTestResult(`✓ Túnel Colab Online (${latency}ms) | GPU: ${data.gpu?.split(',')[0] || 'L4'} | Modelo: ${data.modelo}`);
+        setTestResult(`✓ Servidor 1 (Colab) Online (${latency}ms) | GPU: ${data.gpu?.split(',')[0] || 'L4'} | Modelo: ${data.modelo}`);
+        if (data.bridge_url) setBridgeUrlInput(data.bridge_url);
       } else {
         const resHealth = await fetch(`${cleanUrl}/api/health`);
         if (resHealth.ok) {
-          setTestResult(`✓ Colab Online (${latency}ms) respondendo via /api/health`);
+          setTestResult(`✓ Servidor 1 (Colab) Online (${latency}ms) respondendo via /api/health`);
         } else {
           setTestResult(`Servidor retornou HTTP ${res.status}`);
         }
       }
     } catch (e: any) {
-      setTestResult(`Falha ao conectar: ${e.message || e}`);
+      setTestResult(`Falha ao conectar ao Servidor 1: ${e.message || e}`);
     } finally {
       setIsTesting(false);
       onRefresh();
     }
   };
 
-  const isConnected = !!status || false;
+  const handleSaveBridge = async () => {
+    if (!colabUrl.trim()) {
+      setBridgeFeedback('Conecte primeiro ao Servidor 1 (Colab) para salvar o Tailscale.');
+      return;
+    }
+    setIsSavingBridge(true);
+    setBridgeFeedback(null);
+    try {
+      const cleanUrl = colabUrl.trim().replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/api/bridge/set_url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bridge_url: bridgeUrlInput.trim() })
+      });
+      const data = await res.json();
+      if (data.online) {
+        setBridgeFeedback(`✓ Servidor 2 (Kali via Tailscale) conectado com sucesso! (P2P WireGuard ativo)`);
+      } else if (data.erro) {
+        setBridgeFeedback(`⚠️ IP registrado no Colab, mas a ponte respondeu: ${data.erro}. Verifique se ponte_local.py está aberta.`);
+      } else {
+        setBridgeFeedback(`✓ Endereço Tailscale salvo no Colab: ${bridgeUrlInput}`);
+      }
+      onRefresh();
+    } catch (e: any) {
+      setBridgeFeedback(`Erro ao sincronizar com Colab: ${e.message || e}`);
+    } finally {
+      setIsSavingBridge(false);
+    }
+  };
+
+  const isColabConnected = !!status || false;
+  const isBridgeConnected = status?.bridge_online || false;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-white flex items-center gap-3">
           <Settings className="w-6 h-6 text-neutral-400" />
-          Configurações do Ecossistema
+          Arquitetura de Conexão com 2 Servidores
         </h2>
         <p className="text-xs text-neutral-400 mt-1">
-          Painel central de diagnóstico do Google Colab (GPU L4), Ponte Kali Linux e Memória Drive
+          Operação híbrida: <strong>Cloudflare</strong> para acesso web público e <strong>Tailscale</strong> para comunicação direta P2P sem timeout entre o Colab e o Kali Linux.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Endpoints & Conexão */}
+        {/* Servidor 1: Google Colab via Cloudflare */}
         <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-5">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Wifi className="w-4 h-4 text-emerald-400" />
-            Túnel da API Colab
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <Globe className="w-4 h-4 text-emerald-400" />
+              Servidor 1: Google Colab (Cloudflare)
+            </h3>
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+              isColabConnected ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+            }`}>
+              {isColabConnected ? 'Online ✓' : 'Desconectado'}
+            </span>
+          </div>
           
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-neutral-400 block mb-1.5">URL Pública do Cloudflare (Colab):</label>
+              <label className="text-xs text-neutral-400 block mb-1.5">URL Pública do Cloudflare (Colab API Porta 5000):</label>
               <input 
                 type="text" 
                 value={colabUrl}
@@ -1833,14 +1889,9 @@ function ConfigView({
             </div>
 
             <div className="p-3 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
-              <span className="text-xs text-neutral-400">Status Geral do Servidor:</span>
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
-                isConnected 
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                {isConnected ? 'Conectado (API Online)' : 'Aguardando URL / Desconectado'}
+              <span className="text-xs text-neutral-400">Acelerador Ativo:</span>
+              <span className="text-xs font-mono text-purple-300">
+                {status?.gpu?.split(',')[0] || 'NVIDIA L4 (24 GB)'}
               </span>
             </div>
 
@@ -1856,66 +1907,124 @@ function ConfigView({
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
-              {isTesting ? 'Verificando túnel e GPU...' : 'Testar e Atualizar Status'}
+              {isTesting ? 'Verificando API do Colab...' : 'Testar Conexão Cloudflare'}
             </button>
           </div>
         </div>
 
-        {/* Diagnóstico dos Componentes */}
-        <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-purple-400" />
-            Componentes do Sistema
-          </h3>
-          
-          <div className="space-y-2.5 text-xs">
-            {/* GPU */}
-            <div className="p-3 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
-              <div>
-                <span className="font-medium text-white block">Acelerador de Hardware</span>
-                <span className="text-[11px] text-neutral-500">Google Compute Engine</span>
-              </div>
-              <span className="text-purple-300 font-mono text-[11px] bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                {status?.gpu?.split(',')[0] || 'NVIDIA L4 (24 GB)'}
+        {/* Servidor 2: Kali Linux via Tailscale (Zero Timeouts) */}
+        <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+              Servidor 2: Ponte Kali Linux (Tailscale)
+            </h3>
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+              isBridgeConnected ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+            }`}>
+              {isBridgeConnected ? 'P2P Ativo ✓' : 'Aguardando Tailscale'}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-neutral-400 block mb-1.5">Endereço Tailscale da Ponte (Kali Porta 8000):</label>
+              <input 
+                type="text" 
+                value={bridgeUrlInput}
+                onChange={(e) => setBridgeUrlInput(e.target.value)}
+                placeholder="ex: http://100.115.92.10:8000 ou http://kali:8000"
+                className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+              />
+              <span className="text-[11px] text-neutral-500 mt-1 block">
+                Descubra o IP no Kali digitando: <code className="text-neutral-300 font-mono">tailscale ip -4</code>
               </span>
             </div>
 
-            {/* Modelo */}
             <div className="p-3 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
-              <div>
-                <span className="font-medium text-white block">Modelo Ollama Local</span>
-                <span className="text-[11px] text-neutral-500">DeepSeek Coder Especialista</span>
-              </div>
-              <span className="text-emerald-300 font-mono text-[11px] bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                {status?.modelo || 'deepseek-coder:6.7b'}
+              <span className="text-xs text-neutral-400">Canal de Dados P2P:</span>
+              <span className="text-xs font-semibold text-cyan-400">
+                {isBridgeConnected ? 'Sem Limite de Timeout (WireGuard)' : 'Offline / Não Conectado'}
               </span>
             </div>
 
-            {/* Ponte PC */}
-            <div className="p-3 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
-              <div>
-                <span className="font-medium text-white block">Ponte PC (Kali Linux)</span>
-                <span className="text-[11px] text-neutral-500">script ponte_local.py</span>
+            {bridgeFeedback && (
+              <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-xs font-mono text-cyan-300">
+                {bridgeFeedback}
               </div>
-              <span className={`text-[11px] px-2 py-0.5 rounded font-mono ${
-                status?.bridge_online 
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                  : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
-              }`}>
-                {status?.bridge_online ? 'Ponte Ativa ✓' : 'Pronto (aguardando túnel)'}
-              </span>
-            </div>
+            )}
 
-            {/* Sandbox Drive */}
-            <div className="p-3 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
-              <div>
-                <span className="font-medium text-white block">Sandbox Google Drive</span>
-                <span className="text-[11px] text-neutral-500">Persistência permanente</span>
-              </div>
-              <span className="text-neutral-400 font-mono text-[11px] truncate max-w-[170px]">
-                {status?.drive_sandbox || '/content/drive/MyDrive/AgentNexora'}
-              </span>
+            <button 
+              onClick={handleSaveBridge}
+              disabled={isSavingBridge || !bridgeUrlInput.trim() || !colabUrl.trim()}
+              className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSavingBridge ? 'animate-spin' : ''}`} />
+              {isSavingBridge ? 'Vinculando no Colab...' : 'Salvar & Conectar Ponte no Colab'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Guia Rápido de Comandos para Iniciar Ambos os Servidores */}
+      <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Server className="w-4 h-4 text-emerald-400" />
+          Como Iniciar os 2 Servidores Sem Ngrok (Passo a Passo)
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          {/* Servidor 2: Kali Linux */}
+          <div className="bg-black/40 border border-white/5 rounded-lg p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-neutral-200">1. No seu Kali Linux (Ponte Local):</span>
+              <button 
+                onClick={() => copyToClipboard('sudo apt install tailscale -y && sudo tailscale up && python3 ponte_local.py', 'kali')}
+                className="text-[11px] text-neutral-400 hover:text-white flex items-center gap-1"
+              >
+                {copiedCmd === 'kali' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copiedCmd === 'kali' ? 'Copiado!' : 'Copiar'}
+              </button>
             </div>
+            <pre className="bg-black/60 p-2.5 rounded border border-white/5 font-mono text-[11px] text-neutral-300 overflow-x-auto">
+{`# 1. Instalar e conectar Tailscale no Kali
+sudo apt install tailscale -y
+sudo tailscale up
+
+# 2. Rodar a ponte local
+python3 ponte_local.py`}
+            </pre>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              A ponte rodará na porta <strong>8000</strong> e detectará automaticamente o IP Tailscale (ex: <code>http://100.x.y.z:8000</code>).
+            </p>
+          </div>
+
+          {/* Servidor 1: Google Colab */}
+          <div className="bg-black/40 border border-white/5 rounded-lg p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-neutral-200">2. No Google Colab (GPU L4):</span>
+              <button 
+                onClick={() => copyToClipboard('!curl -fsSL https://tailscale.com/install.sh | sh\n!tailscale up --authkey="SEU_KEY"\n!cloudflared tunnel --url http://localhost:5000 &\n!python3 main.py --api --port 5000', 'colab')}
+                className="text-[11px] text-neutral-400 hover:text-white flex items-center gap-1"
+              >
+                {copiedCmd === 'colab' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copiedCmd === 'colab' ? 'Copiado!' : 'Copiar'}
+              </button>
+            </div>
+            <pre className="bg-black/60 p-2.5 rounded border border-white/5 font-mono text-[11px] text-neutral-300 overflow-x-auto">
+{`# 1. Instalar Tailscale no Colab
+!curl -fsSL https://tailscale.com/install.sh | sh
+!tailscale up --authkey="SEU_AUTHKEY"
+
+# 2. Expor a API com Cloudflare
+!cloudflared tunnel --url http://localhost:5000 &
+
+# 3. Iniciar o Nexora API
+!python3 main.py --api --port 5000`}
+            </pre>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              O Colab acessará o Kali diretamente sem timeouts via WireGuard, e o navegador acessará o Colab via Cloudflare.
+            </p>
           </div>
         </div>
       </div>

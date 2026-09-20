@@ -7,7 +7,7 @@ import re
 
 # Configurações iniciais passadas pelo Colab
 parser = argparse.ArgumentParser()
-parser.add_argument("--bridge_url", type=str, required=True, help="URL do Ngrok do PC local")
+parser.add_argument("--bridge_url", type=str, default="", help="URL do Tailscale ou Ngrok da Ponte Local (ex: http://100.x.y.z:8000)")
 parser.add_argument("--modelo", type=str, default="deepseek-coder:6.7b")
 parser.add_argument("--memoria_dir", type=str, default="./memory")
 parser.add_argument("--api", action="store_true", help="Rodar como servidor HTTP API para a interface web")
@@ -104,10 +104,20 @@ def salvar_memoria(historico):
         print("[Aviso] Erro ao salvar memória:", e)
 
 # --- FUNÇÕES DE ACESSO AO PC (PONTE LOCAL) ---
+def obter_bridge_url():
+    url = (args.bridge_url or "").strip().rstrip("/")
+    if not url:
+        # Tenta fallback padrão do Tailscale para host 'kali' ou localhost
+        return ""
+    return url
+
 def ler_pc(caminho):
-    print(f"[Agente Tool] Lendo do PC: {caminho}")
+    bridge = obter_bridge_url()
+    if not bridge:
+        return "[Aviso] Ponte Local não configurada. Defina o endereço Tailscale da máquina Kali (ex: http://100.x.y.z:8000) nas Configurações."
+    print(f"[Agente Tool] Lendo do PC via Ponte ({bridge}): {caminho}")
     try:
-        res = requests.post(f"{args.bridge_url}/ler_arquivo", json={"caminho": caminho}, headers=BRIDGE_HEADERS, timeout=30)
+        res = requests.post(f"{bridge}/ler_arquivo", json={"caminho": caminho}, headers=BRIDGE_HEADERS, timeout=30)
         if res.status_code == 200:
             dados = res.json()
             # Se for arquivo binário transmitido em base64 (ex: .sty, .mid, etc.)
@@ -124,21 +134,28 @@ def ler_pc(caminho):
             return dados.get('conteudo', '')
         return f"Erro ao ler: {res.text}"
     except Exception as e:
-        return f"Erro ao conectar ao PC via ponte: {e}"
+        return f"Erro ao conectar ao PC via ponte ({bridge}): {e}"
 
 def salvar_pc(caminho, conteudo):
-    print(f"[Agente Tool] Salvando no PC: {caminho}")
+    bridge = obter_bridge_url()
+    if not bridge:
+        print("[Aviso] Ponte Local não configurada para salvar no PC.")
+        return False
+    print(f"[Agente Tool] Salvando no PC via Ponte ({bridge}): {caminho}")
     try:
-        res = requests.post(f"{args.bridge_url}/salvar_arquivo", json={"caminho": caminho, "conteudo": conteudo}, headers=BRIDGE_HEADERS, timeout=12)
+        res = requests.post(f"{bridge}/salvar_arquivo", json={"caminho": caminho, "conteudo": conteudo}, headers=BRIDGE_HEADERS, timeout=12)
         return res.status_code == 200
     except Exception as e:
         print(f"Erro ao salvar no PC: {e}")
         return False
 
 def listar_pc(caminho):
-    print(f"[Agente Tool] Listando arquivos no PC: {caminho}")
+    bridge = obter_bridge_url()
+    if not bridge:
+        return "Ponte Local não configurada. Defina o endereço Tailscale da máquina Kali (ex: http://100.x.y.z:8000) nas Configurações."
+    print(f"[Agente Tool] Listando arquivos no PC via Ponte ({bridge}): {caminho}")
     try:
-        res = requests.post(f"{args.bridge_url}/listar_arquivos", json={"caminho": caminho}, headers=BRIDGE_HEADERS, timeout=10)
+        res = requests.post(f"{bridge}/listar_arquivos", json={"caminho": caminho}, headers=BRIDGE_HEADERS, timeout=10)
         if res.status_code == 200: return res.json().get('conteudo', '')
         return f"Erro ao listar: {res.text}"
     except Exception as e:
@@ -1089,6 +1106,28 @@ def pensar(prompt, historico, contexto=""):
 def api_health():
     return {"status": "online", "model": args.modelo}
 
+class BridgeUrlRequest(BaseModel):
+    bridge_url: str
+
+@api_app.post("/api/bridge/set_url")
+def api_set_bridge_url(req: BridgeUrlRequest):
+    nova_url = req.bridge_url.strip().rstrip("/")
+    args.bridge_url = nova_url
+    print(f"[Configuração] Bridge URL atualizada para: {nova_url}")
+    # Testa conexão imediatamente
+    online = False
+    erro = ""
+    if nova_url:
+        try:
+            r = requests.get(f"{nova_url}/status", headers=BRIDGE_HEADERS, timeout=2.5)
+            if r.status_code == 200:
+                online = True
+            else:
+                erro = f"HTTP {r.status_code}"
+        except Exception as e:
+            erro = str(e)
+    return {"status": "ok", "bridge_url": args.bridge_url, "online": online, "erro": erro}
+
 @api_app.get("/api/system/status")
 def api_system_status():
     gpu_info = "CPU (Sem GPU detectada)"
@@ -1099,21 +1138,23 @@ def api_system_status():
     except Exception:
         pass
     
+    bridge = (args.bridge_url or "").strip().rstrip("/")
     bridge_online = False
-    try:
-        # Ping rápido para /status na ponte sem solicitar input no terminal
-        r = requests.get(f"{args.bridge_url}/status", headers=BRIDGE_HEADERS, timeout=1.2)
-        if r.status_code == 200:
-            bridge_online = True
-    except Exception:
-        bridge_online = False
+    if bridge:
+        try:
+            # Ping rápido para /status na ponte sem solicitar input no terminal
+            r = requests.get(f"{bridge}/status", headers=BRIDGE_HEADERS, timeout=1.8)
+            if r.status_code == 200:
+                bridge_online = True
+        except Exception:
+            bridge_online = False
         
     historico = carregar_memoria()
     return {
         "status": "online",
         "modelo": args.modelo,
         "gpu": gpu_info,
-        "bridge_url": args.bridge_url,
+        "bridge_url": bridge,
         "bridge_online": bridge_online,
         "drive_sandbox": ALLOWED_DRIVE_DIR,
         "total_mensagens": len(historico)

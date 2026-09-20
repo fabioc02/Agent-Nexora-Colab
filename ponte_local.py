@@ -9,6 +9,8 @@ parser = argparse.ArgumentParser(description="Ponte Nexora Local")
 parser.add_argument("--auto-allow-list", action="store_true", default=True, help="Permite listar diretórios sem travar no prompt")
 parser.add_argument("--auto-allow-read", action="store_true", default=True, help="Permite leitura sem travar no prompt")
 parser.add_argument("--auto-allow-all", action="store_true", default=False, help="Permite todas as operações (leitura, escrita, listagem) sem confirmação interativa")
+parser.add_argument("--tailscale", action="store_true", default=True, help="Usar Tailscale direto (P2P sem ngrok)")
+parser.add_argument("--use-ngrok", action="store_true", default=False, help="Forçar o uso do túnel Ngrok em vez de Tailscale")
 args_cli, _ = parser.parse_known_args()
 
 app = FastAPI(title="Ponte Nexora com Segurança")
@@ -111,13 +113,36 @@ def listar_arquivos(req: FileReq):
 
 if __name__ == "__main__":
     import uvicorn
+    import subprocess
     
-    # Configure seu token caso não esteja configurado no sistema
-    # ngrok.set_auth_token("SEU_TOKEN_AQUI")
-    
-    url_publica = ngrok.connect(8000)
-    print("\n" + "="*50)
-    print("COPIE ESTE LINK E COLE LÁ NO COLAB:")
-    print(url_publica.public_url)
-    print("="*50 + "\n")
+    print("\n" + "="*60)
+    print("🚀 INICIANDO PONTE NEXORA LOCAL")
+    print("="*60)
+
+    tailscale_ip = ""
+    try:
+        ts_res = subprocess.getoutput("tailscale ip -4").strip()
+        if ts_res and not "command not found" in ts_res and not "failed" in ts_res.lower() and "." in ts_res:
+            tailscale_ip = ts_res.splitlines()[0].strip()
+    except Exception:
+        pass
+
+    if args_cli.use_ngrok:
+        from pyngrok import ngrok
+        url_publica = ngrok.connect(8000)
+        print("🔗 MODO NGROK ATIVADO:")
+        print(f"URL Pública: {url_publica.public_url}")
+        print("Passe esta URL no Colab: --bridge_url " + url_publica.public_url)
+    else:
+        print("🛡️ MODO TAILSCALE (REDE PRIVADA P2P SEM TIMEOUT):")
+        if tailscale_ip:
+            print(f"✓ IP Tailscale Detectado no Kali: {tailscale_ip}")
+            print(f"👉 Passe no Colab: --bridge_url http://{tailscale_ip}:8000")
+        else:
+            print("⚠️ Tailscale não detectado automaticamente. Se já estiver rodando:")
+            print("   Descubra o IP com: tailscale ip -4")
+            print("   Ou use o nome do host da máquina na Tailnet (ex: http://kali:8000)")
+            print("   Porta local: http://localhost:8000")
+            
+    print("="*60 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)

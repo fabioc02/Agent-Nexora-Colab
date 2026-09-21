@@ -1912,39 +1912,39 @@ function ConfigView({
           </div>
         </div>
 
-        {/* Servidor 2: Kali Linux via Tailscale (Zero Timeouts) */}
+        {/* Servidor 2: Kali Linux via Tailscale ou Cloudflare (Zero Timeouts) */}
         <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-cyan-400" />
-              Servidor 2: Ponte Kali Linux (Tailscale)
+              Servidor 2: Ponte Kali Linux (P2P / Cloudflare)
             </h3>
             <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
               isBridgeConnected ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
             }`}>
-              {isBridgeConnected ? 'P2P Ativo ✓' : 'Aguardando Tailscale'}
+              {isBridgeConnected ? 'Conectado ✓' : 'Aguardando Endereço'}
             </span>
           </div>
 
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-neutral-400 block mb-1.5">Endereço Tailscale da Ponte (Kali Porta 8000):</label>
+              <label className="text-xs text-neutral-400 block mb-1.5">Endereço da Ponte (Tailscale IP ou URL Cloudflare):</label>
               <input 
                 type="text" 
                 value={bridgeUrlInput}
                 onChange={(e) => setBridgeUrlInput(e.target.value)}
-                placeholder="ex: http://100.115.92.10:8000 ou http://kali:8000"
+                placeholder="ex: http://100.110.44.53:8000 ou https://xxx.trycloudflare.com"
                 className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[11px] text-neutral-500 mt-1 block">
-                Descubra o IP no Kali digitando: <code className="text-neutral-300 font-mono">tailscale ip -4</code>
+                Use o IP Tailscale ou execute no Kali: <code className="text-neutral-300 font-mono">python ponte_local.py --cloudflare</code>
               </span>
             </div>
 
             <div className="p-3 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
-              <span className="text-xs text-neutral-400">Canal de Dados P2P:</span>
+              <span className="text-xs text-neutral-400">Canal de Comunicação:</span>
               <span className="text-xs font-semibold text-cyan-400">
-                {isBridgeConnected ? 'Sem Limite de Timeout (WireGuard)' : 'Offline / Não Conectado'}
+                {isBridgeConnected ? 'Ativo (Sem limites de timeout)' : 'Offline / Não Conectado'}
               </span>
             </div>
 

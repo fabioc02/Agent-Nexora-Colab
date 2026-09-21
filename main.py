@@ -1118,14 +1118,20 @@ def api_set_bridge_url(req: BridgeUrlRequest):
     online = False
     erro = ""
     if nova_url:
-        try:
-            r = requests.get(f"{nova_url}/status", headers=BRIDGE_HEADERS, timeout=2.5)
-            if r.status_code == 200:
-                online = True
-            else:
-                erro = f"HTTP {r.status_code}"
-        except Exception as e:
-            erro = str(e)
+        # Se for IP do Tailscale (100.x.y.z), verifica se o Colab está no Tailscale
+        if "100." in nova_url:
+            ts_check = subprocess.getoutput("tailscale status 2>&1")
+            if "Logged out" in ts_check or "not running" in ts_check or "command not found" in ts_check:
+                erro = "O Google Colab ainda NÃO está conectado ao Tailscale. No notebook do Colab, execute: !tailscale up --authkey=\"SEU_KEY\""
+        if not erro:
+            try:
+                r = requests.get(f"{nova_url}/status", headers=BRIDGE_HEADERS, timeout=5.0)
+                if r.status_code == 200:
+                    online = True
+                else:
+                    erro = f"HTTP {r.status_code}"
+            except Exception as e:
+                erro = str(e)
     return {"status": "ok", "bridge_url": args.bridge_url, "online": online, "erro": erro}
 
 @api_app.get("/api/system/status")

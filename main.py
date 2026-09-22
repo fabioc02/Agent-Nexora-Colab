@@ -328,6 +328,21 @@ def compilar_projeto_linux(dir_proj, nome_executavel="groovestation_gui"):
     compilador = "g++"
     flags = ["-O3", "-lpthread"]
     
+    # PortAudio
+    if "portaudio.h" in conteudo:
+        subprocess.getoutput("apt-get install -y -qq portaudio19-dev 2>/dev/null")
+        flags.append("-lportaudio")
+
+    # RtMidi
+    if "RtMidi.h" in conteudo or "rtmidi" in conteudo.lower():
+        subprocess.getoutput("apt-get install -y -qq librtmidi-dev 2>/dev/null")
+        flags.append("-lrtmidi")
+
+    # GTKmm (C++ wrapper para GTK)
+    if "gtkmm.h" in conteudo:
+        subprocess.getoutput("apt-get install -y -qq libgtkmm-3.0-dev 2>/dev/null")
+        flags.append("$(pkg-config --cflags --libs gtkmm-3.0 2>/dev/null)")
+
     # GTK+ 3.0
     if "gtk/gtk.h" in conteudo or "GtkApplication" in conteudo or "gtk_" in conteudo:
         subprocess.getoutput("apt-get install -y -qq libgtk-3-dev 2>/dev/null")
@@ -447,10 +462,27 @@ def compilar_projeto_android(nome_app="MeuAppAndroid"):
 </resources>
 """)
 
-    # MainActivity.java
+    # MainActivity.java: Preserva código gerado pelo agente se existir
     java_file = f"{pkg_dir}/MainActivity.java"
-    with open(java_file, 'w') as f:
-        f.write(f"""package com.nexora.{nome_app.lower()};
+    codigo_custom = ""
+    for arq_candidato in [f"{dir_base}/main.java", f"{dir_base}/MainActivity.java", f"{dir_base}/app.java"]:
+        if os.path.exists(arq_candidato) and os.path.getsize(arq_candidato) > 50:
+            try:
+                with open(arq_candidato, "r", encoding="utf-8") as f_cand:
+                    codigo_custom = f_cand.read()
+                break
+            except Exception:
+                pass
+                
+    if codigo_custom:
+        if f"package com.nexora.{nome_app.lower()};" not in codigo_custom:
+            linhas_cod = [l for l in codigo_custom.splitlines() if not l.strip().startswith("package ")]
+            codigo_custom = f"package com.nexora.{nome_app.lower()};\n" + "\n".join(linhas_cod)
+        with open(java_file, 'w', encoding='utf-8') as f:
+            f.write(codigo_custom)
+    elif not os.path.exists(java_file) or os.path.getsize(java_file) == 0:
+        with open(java_file, 'w') as f:
+            f.write(f"""package com.nexora.{nome_app.lower()};
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -604,10 +636,10 @@ def preparar_toolchain(tipo):
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq mingw-w64 mingw-w64-tools")
 
     elif tipo == "linux_gui":
-        print("[Toolchain] Verificando bibliotecas gráficas Linux (SDL2/Raylib)...")
-        if not os.path.exists("/usr/include/SDL2/SDL.h"):
-            logs.append("⚡ [Toolchain] Instalando SDL2, Raylib, ALSA e build-essential...")
-            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libsdl2-dev libsdl2-mixer-dev libsdl2-image-dev libasound2-dev libraylib-dev libgtk-3-dev cmake build-essential")
+        print("[Toolchain] Verificando bibliotecas gráficas e de áudio Linux (SDL2/Raylib/GTK/PortAudio)...")
+        if not os.path.exists("/usr/include/SDL2/SDL.h") or not os.path.exists("/usr/include/portaudio.h"):
+            logs.append("⚡ [Toolchain] Instalando SDL2, Raylib, ALSA, PortAudio, RtMidi, GTKmm e build-essential...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq libsdl2-dev libsdl2-mixer-dev libsdl2-image-dev libasound2-dev libraylib-dev libgtk-3-dev libgtkmm-3.0-dev portaudio19-dev librtmidi-dev cmake build-essential")
 
     elif tipo == "python_bin":
         print("[Toolchain] Verificando PyInstaller...")
@@ -871,13 +903,13 @@ def pensar(prompt, historico, contexto=""):
         }
         
         try:
-            resposta = requests.post(url, json=payload, timeout=60)
+            resposta = requests.post(url, json=payload, timeout=300)
             if resposta.status_code != 200:
                 return "Erro no Ollama: " + resposta.text
             dados = resposta.json()
             texto = dados['message']['content']
         except requests.exceptions.Timeout:
-            return "[Tempo Limite Excedido] A geração demorou mais de 60s. O Nexora reduziu a janela de contexto para manter respostas ultra-rápidas."
+            return "[Tempo Limite Excedido] A compilação ou geração demorou mais de 300s. Tente solicitar uma etapa menor."
         except Exception as e:
             return f"Erro de comunicação com Ollama: {e}"
             
@@ -934,13 +966,30 @@ def pensar(prompt, historico, contexto=""):
                 print(f"[Agente Tool] Salvou arquivo: {caminho}")
                 tem_acao = True
             
-        elif "<EXECUTAR>" in texto and "</EXECUTAR>" in texto:
-            comando = texto.split("<EXECUTAR>")[1].split("</EXECUTAR>")[0].strip()
-            if comando.lower() not in placeholders_invalidos:
-                print(f"[Agente Tool] Executando comando no Colab: {comando}")
-                result = subprocess.getoutput(comando)
-                mensagens_ollama.append({"role": "user", "content": f"Saída do terminal:\n{result}"})
-                logs_execucao.append(f"⚡ Terminal: `{comando}`\n```\n{result[:600]}\n```")
+        elif ("<EXECUTAR>" in texto and "</EXECUTAR>" in texto) or ("<terminal>" in texto and "</terminal>" in texto) or any(l.strip().startswith(("EXECUTAR ", "RUN ")) for l in texto.splitlines()):
+            comandos_encontrados = []
+            if "<EXECUTAR>" in texto and "</EXECUTAR>" in texto:
+                comandos_encontrados.append(texto.split("<EXECUTAR>")[1].split("</EXECUTAR>")[0].strip())
+            if "<terminal>" in texto and "</terminal>" in texto:
+                comandos_encontrados.append(texto.split("<terminal>")[1].split("</terminal>")[0].strip())
+            for linha in texto.splitlines():
+                l_s = linha.strip()
+                if l_s.startswith(("EXECUTAR ", "RUN ")):
+                    cmd_extraido = l_s.split(" ", 1)[1].strip().strip("'\"")
+                    if not cmd_extraido.startswith(('│', '├', '└', '─', '|')) and cmd_extraido not in comandos_encontrados:
+                        comandos_encontrados.append(cmd_extraido)
+                        
+            saidas_exec = []
+            for comando in comandos_encontrados:
+                if comando.lower() not in placeholders_invalidos and not comando.startswith(('│', '├', '└', '─', '|')):
+                    comando_limpo = comando.replace("sudo ", "")
+                    print(f"[Agente Tool] Executando comando no Colab: {comando_limpo}")
+                    result = subprocess.getoutput(comando_limpo)
+                    saidas_exec.append(f"$ {comando_limpo}\n{result}")
+                    logs_execucao.append(f"⚡ Terminal: `{comando_limpo}`\n```\n{result[:600]}\n```")
+                    
+            if saidas_exec:
+                mensagens_ollama.append({"role": "user", "content": "Saída do terminal:\n" + "\n".join(saidas_exec)})
                 tem_acao = True
 
         if tem_acao:
@@ -956,7 +1005,7 @@ def pensar(prompt, historico, contexto=""):
         elif any(w in prompt_lower for w in ['windows', '.exe', 'mingw']):
             tool_log = preparar_toolchain("windows")
             if tool_log: logs_execucao.append(tool_log)
-        elif any(w in prompt_lower for w in ['sdl', 'gui', 'raylib', 'gtk', 'desktop', 'groove', 'sequenciador']):
+        elif any(w in prompt_lower for w in ['sdl', 'gui', 'raylib', 'gtk', 'gtkmm', 'desktop', 'groove', 'sequenciador', 'sintetizador', 'synth', 'audio', 'portaudio', 'c++', 'cpp']):
             tool_log = preparar_toolchain("linux_gui")
             if tool_log: logs_execucao.append(tool_log)
 
@@ -1040,8 +1089,8 @@ def pensar(prompt, historico, contexto=""):
                 compilou_com_sucesso = True
             logs_execucao.append(log_android)
 
-        # C) Compilação Linux Desktop / GUI (C++ / SDL2 / GTK3 / Raylib)
-        elif pediu_build and any(w in prompt_lower for w in ['linux', 'c++', 'cpp', 'gtk', 'sdl', 'raylib', 'groovestation', 'executavel linux', 'desktop']):
+        # C) Compilação Linux Desktop / GUI / Áudio (C++ / SDL2 / GTK3 / Raylib / PortAudio)
+        elif pediu_build and any(w in prompt_lower for w in ['linux', 'c++', 'cpp', 'gtk', 'gtkmm', 'sdl', 'raylib', 'groovestation', 'executavel linux', 'desktop', 'sintetizador', 'synth', 'audio', 'som', 'portaudio']):
             sucesso_linux, log_linux = compilar_projeto_linux(dir_proj, nome_exec_padrao)
             if sucesso_linux:
                 compilou_com_sucesso = True

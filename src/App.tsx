@@ -2033,4 +2033,3 @@ python3 ponte_local.py`}
 }
 
 export default App;
-

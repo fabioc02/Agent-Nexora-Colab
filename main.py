@@ -1122,6 +1122,12 @@ def executar_comando_inteligente(comando: str) -> tuple[str, bool]:
     cmd = comando.strip()
     cmd_limpo = cmd.replace("sudo ", "")
 
+    # Proteção: Impede o modelo de derrubar o Colab com shutdown/reboot
+    if any(k in cmd_limpo.lower() for k in ["shutdown", "reboot", "poweroff", "init 0", "init 6"]):
+        msg_bloqueio = "[SEGURANÇA NEXORA] Comando de reinicialização/desligamento bloqueado. O Colab não deve ser reiniciado pois destrói o runtime e desconecta o túnel."
+        print(f"[Segurança] {msg_bloqueio}")
+        return msg_bloqueio, True
+
     # 1. Detecta se é código Python que foi colado no terminal
     padroes_python = [
         r'^\s*(class|def|import|from)\s+\w+',

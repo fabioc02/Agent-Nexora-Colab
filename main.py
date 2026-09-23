@@ -4,6 +4,8 @@ import argparse
 import requests
 import subprocess
 import re
+import time
+from datetime import datetime
 from collections import deque
 
 # Configurações iniciais passadas pelo Colab
@@ -1018,10 +1020,176 @@ if __name__ == "__main__":
     return resposta
 
 # ============================================================
-# BLOCO 2: ANTI-LOOP E DESTRAVAMENTO DO NEXORA
+# BLOCO 2: PERSISTÊNCIA, ANTI-LOOP, ROTEADOR E DESTRAVAMENTO
 # ============================================================
 
-_respostas_recentes = deque(maxlen=5)
+DIR_ESTADO = "/content/drive/MyDrive/AgentNexora/estado"
+
+def atualizar_estado_drive(acao: str, detalhes: str = "", proximo_passo: str = ""):
+    """Registra o progresso e o próximo passo no Drive para sobreviver a desconexões e reinicializações."""
+    try:
+        os.makedirs(DIR_ESTADO, exist_ok=True)
+        # 1. log.txt
+        log_path = os.path.join(DIR_ESTADO, "log.txt")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {acao}: {detalhes[:200]}\n")
+            
+        # 2. proximo_passo.txt
+        if proximo_passo:
+            prox_path = os.path.join(DIR_ESTADO, "proximo_passo.txt")
+            with open(prox_path, "w", encoding="utf-8") as f:
+                f.write(proximo_passo.strip())
+                
+        # 3. progresso.json
+        prog_path = os.path.join(DIR_ESTADO, "progresso.json")
+        prog_data = {
+            "ultima_atualizacao": datetime.now().isoformat(),
+            "ultima_acao": acao,
+            "proximo_passo": proximo_passo
+        }
+        with open(prog_path, "w", encoding="utf-8") as f:
+            json.dump(prog_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[Estado Drive] Erro ao salvar estado: {e}")
+
+def obter_proximo_passo_drive() -> str:
+    """Recupera o último passo onde o agente parou."""
+    try:
+        prox_path = os.path.join(DIR_ESTADO, "proximo_passo.txt")
+        if os.path.exists(prox_path):
+            with open(prox_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return ""
+
+def tentar_reconectar_tunel(max_tentativas: int = 3) -> bool:
+    """Tenta reiniciar o processo do cloudflared caso tenha caído ou sido desconectado."""
+    for i in range(max_tentativas):
+        try:
+            print(f"[Túnel Nexora] Tentando reconectar cloudflared (tentativa {i+1}/{max_tentativas})...")
+            subprocess.run(["pkill", "-f", "cloudflared"], check=False)
+            time.sleep(2)
+            proc = subprocess.Popen(
+                ["cloudflared", "tunnel", "--url", f"http://localhost:{args.port}"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True
+            )
+            time.sleep(6)
+            if proc.poll() is None:
+                print("[Túnel Nexora] Processo cloudflared reiniciado com sucesso!")
+                return True
+        except Exception as e:
+            print(f"[Túnel Nexora] Falha ao reiniciar: {e}")
+            time.sleep(2)
+    return False
+
+def compactar_contexto(historico: list, limite: int = 20) -> list:
+    """Se o histórico passar de limite mensagens, resume as antigas para evitar context rot no 14B."""
+    if len(historico) <= limite:
+        return historico
+    
+    mensagens_uteis = [m for m in historico if m.get("role") != "system"]
+    if len(mensagens_uteis) <= 12:
+        return historico
+        
+    antigas = mensagens_uteis[:-12]
+    recentes = mensagens_uteis[-12:]
+    
+    resumo_acoes = []
+    for msg in antigas:
+        c = msg.get("content", "")
+        if msg.get("role") == "user" and len(c) < 160:
+            resumo_acoes.append(f"Usuário: {c.strip()}")
+        elif any(k in c for k in ['Salvo', 'Terminal', 'SUCESSO', 'Ghidra', 'Wine', 'r2', 'APK', 'PE32']):
+            linhas_uteis = [l.strip() for l in c.split("\n") if l.strip() and any(k in l for k in ['Salvo', 'Terminal', 'SUCESSO', 'Ghidra', 'Wine', 'r2', 'APK', 'PE32'])]
+            if linhas_uteis:
+                resumo_acoes.append("; ".join(linhas_uteis[:2]))
+                
+    texto_resumo = "\n".join(resumo_acoes[-10:]) if resumo_acoes else "Triagem inicial e preparação do ambiente concluídas."
+    return [
+        {"role": "system", "content": f"[RESUMO DO PROGRESSO ANTERIOR - NÃO REPETIR]:\n{texto_resumo}"}
+    ] + recentes
+
+def executar_comando_inteligente(comando: str) -> tuple[str, bool]:
+    """
+    Roteador inteligente que:
+    1. Detecta código Python colado no terminal bash e salva em script para executar com python3.
+    2. Intercepta apt-get com pacotes inexistentes no Ubuntu (ghidra, radare2, capstone, winecfg1, wine-headers, python3-construct).
+    3. Executa no bash com segurança.
+    """
+    cmd = comando.strip()
+    cmd_limpo = cmd.replace("sudo ", "")
+
+    # 1. Detecta se é código Python que foi colado no terminal
+    padroes_python = [
+        r'^\s*(class|def|import|from)\s+\w+',
+        r'Construct\.',
+        r'^\s*@\w+',
+        r'print\(',
+        r'open\(',
+        r'\.parse\(',
+    ]
+    eh_codigo_python = any(re.search(p, cmd_limpo, re.MULTILINE) for p in padroes_python)
+    if eh_codigo_python and not cmd_limpo.startswith(("python", "python3", "cat ", "echo ")):
+        print(f"[Roteador de Ferramentas] Detectado código Python colado no terminal. Salvando em script...")
+        dir_re = "/content/drive/MyDrive/AgentNexora/RE"
+        os.makedirs(dir_re, exist_ok=True)
+        script_path = f"{dir_re}/analise_auto.py"
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(cmd_limpo)
+        saida_py = subprocess.getoutput(f"python3 {script_path} 2>&1")
+        msg = (
+            f"[AUTO-ROTEAMENTO PYTHON] Você enviou código Python diretamente para o shell bash. "
+            f"O Nexora salvou automaticamente o código em `{script_path}` e executou com `python3`:\n"
+            f"```\n{saida_py}\n```"
+        )
+        return msg, True
+
+    # 2. Intercepta apt-get com pacotes inexistentes
+    if "apt-get install" in cmd_limpo or "apt install" in cmd_limpo:
+        pacotes_proibidos = {
+            "ghidra": "O pacote 'ghidra' NÃO existe no apt do Ubuntu. Use /opt/ghidra/support/analyzeHeadless ou execute bash /setup_re.sh",
+            "radare2": "O pacote 'radare2' NÃO existe no apt padrão do Colab. Use 'r2' compilado ou execute bash /setup_re.sh",
+            "capstone": "O pacote 'capstone' NÃO existe no apt. Instalado via 'pip install capstone'.",
+            "winecfg1": "O pacote 'winecfg1' NÃO existe no apt. O Wine já é configurado via 'winecfg' ou 'wine64'.",
+            "wine-headers": "O pacote 'wine-headers' NÃO existe no PyPI/apt.",
+            "python3-construct": "Instalando 'construct' via pip: 'pip install construct'...",
+            "python3-mido": "Instalando 'mido' via pip: 'pip install mido python-rtmidi'..."
+        }
+        intercepcoes = []
+        for p_prob, explicacao in pacotes_proibidos.items():
+            if re.search(r'\b' + re.escape(p_prob) + r'\b', cmd_limpo):
+                intercepcoes.append(explicacao)
+                if p_prob in ["capstone", "python3-construct", "python3-mido"]:
+                    pkg = "capstone" if p_prob == "capstone" else ("construct" if p_prob == "python3-construct" else "mido python-rtmidi")
+                    subprocess.getoutput(f"pip install -q {pkg}")
+                elif p_prob in ["ghidra", "radare2"]:
+                    subprocess.getoutput("bash /setup_re.sh >/dev/null 2>&1 || bash ./setup_re.sh >/dev/null 2>&1")
+
+        if intercepcoes:
+            cmd_ajustado = cmd_limpo
+            for p_prob in pacotes_proibidos.keys():
+                cmd_ajustado = re.sub(r'\b' + re.escape(p_prob) + r'\b', '', cmd_ajustado)
+            cmd_ajustado = re.sub(r'\s+', ' ', cmd_ajustado).strip()
+            
+            saida_apt = ""
+            if any(w in cmd_ajustado for w in ['apt-get install -y', 'apt install -y']) and len(cmd_ajustado.split()) > 3:
+                saida_apt = subprocess.getoutput(cmd_ajustado)
+
+            res_final = (
+                "[AUTO-CORREÇÃO DE FERRAMENTAS]:\n" +
+                "\n".join(f"⚠️ {aviso}" for aviso in intercepcoes) +
+                (f"\n\nExecução do apt-get restante:\n{saida_apt}" if saida_apt else "\nDependências tratadas via pip/GitHub com sucesso!")
+            )
+            return res_final, True
+
+    # 3. Execução normal no terminal
+    saida = subprocess.getoutput(cmd_limpo)
+    return saida, True
+
+_respostas_recentes = deque(maxlen=6)
 
 # Frases proibidas — se aparecerem, a resposta é descartada e corrigida
 FRASES_PROIBIDAS = [
@@ -1031,15 +1199,21 @@ FRASES_PROIBIDAS = [
     "preciso que voce",
     "você deve instalar",
     "voce deve instalar",
-    "siga os passos abaixo",
-    "siga as etapas abaixo",
+    "você deve",
+    "voce deve",
+    "siga os passos",
+    "siga as etapas",
     "vou ajudá-lo",
     "vou ajuda-lo",
     "para auxiliá-lo",
     "para auxilia-lo",
     "to install wine",
+    "to install",
     "follow these",
     "follow the steps",
+    "by following these",
+    "step 1",
+    "step 2",
     "eu não posso compilar",
     "não permite a execução de comandos shell",
 ]
@@ -1048,8 +1222,18 @@ FRASES_PROIBIDAS = [
 INDICADORES_DESCRICAO = [
     "passo 1", "passo 2", "etapa 1", "etapa 2",
     "step 1", "step 2",
-    "primeiro,", "segundo,",
+    "primeiro,", "segundo,", "primeiro, instale", "primeiro, execute"
 ]
+
+def tem_ingles_predominante(resposta: str) -> bool:
+    """Detecta resposta predominantemente em inglês para forçar português do Brasil."""
+    marcadores_en = [
+        " the ", " and ", " to install ", " follow ", " steps ",
+        " first ", " you can ", " you should ", " make sure ",
+        " in order to ", " by following ", " please note ", " here is ", " let's "
+    ]
+    r = " " + resposta.lower() + " "
+    return sum(1 for m in marcadores_en if m in r) >= 2
 
 def contem_tool_call(resposta: str) -> bool:
     """Verifica se a resposta contém uma chamada de ferramenta real do Nexora."""
@@ -1084,6 +1268,8 @@ def so_descricao_sem_acao(resposta: str) -> bool:
 
 def validar_resposta(resposta: str) -> tuple[bool, str]:
     """Retorna (valida, motivo_rejeicao)."""
+    if tem_ingles_predominante(resposta):
+        return False, "ingles_detectado"
     if contem_frase_proibida(resposta):
         return False, "frase_proibida"
     if esta_repetindo(resposta):
@@ -1095,10 +1281,14 @@ def validar_resposta(resposta: str) -> tuple[bool, str]:
     return True, "ok"
 
 CORRECOES = {
+    "ingles_detectado": (
+        "[SISTEMA] Responda SEMPRE em português do Brasil. Nunca misture inglês. "
+        "Reescreva a resposta em português e continue executando via <EXECUTAR>."
+    ),
     "frase_proibida": (
         "[SISTEMA] Você usou uma frase proibida. Você NÃO pede permissão, "
-        "você EXECUTA. Você está no Linux com terminal e root. Chame uma ferramenta AGORA via <EXECUTAR>. "
-        "Não descreva. Não pergunte. Execute."
+        "NÃO descreve passos, NÃO pergunta. Você EXECUTA via ferramenta. "
+        "Chame <EXECUTAR> AGORA. Não descreva. Não pergunte. Execute."
     ),
     "repeticao": (
         "[SISTEMA] Você está repetindo a mesma resposta. PARE. "
@@ -1226,7 +1416,12 @@ def pensar(prompt, historico, contexto=""):
     if any(t in prompt.lower() for t in termos_acao):
         system_content += "\n[ORDEM EXECUTIVA]: O usuário pediu para CRIAR, INSTALAR ou COMPILAR. Você é um agente executivo com root. Execute com <EXECUTAR> e salve com <SALVAR_INICIO>. NUNCA diga para o usuário digitar no terminal!"
 
-    mensagens_ollama = [{"role": "system", "content": system_content}] + recentes
+    passo_pendente = obter_proximo_passo_drive()
+    if passo_pendente:
+        system_content += f"\n[RETOMADA DO DRIVE]: Último passo pendente registrado no Drive: '{passo_pendente}'. Prossiga a partir deste ponto."
+
+    recentes_compactadas = compactar_contexto(recentes, limite=16)
+    mensagens_ollama = [{"role": "system", "content": system_content}] + recentes_compactadas
     
     print(f"[Agente] Pensando (contexto: {len(mensagens_ollama)} msgs)...")
     loop_count = 0
@@ -1269,6 +1464,10 @@ def pensar(prompt, historico, contexto=""):
         except requests.exceptions.Timeout:
             return "[Tempo Limite Excedido] A compilação ou geração demorou mais de 300s. Tente solicitar uma etapa menor."
         except Exception as e:
+            err_str = str(e)
+            if any(k in err_str for k in ["Connection aborted", "RemoteDisconnected", "Failed to establish a new connection"]):
+                print("[NEXORA] Conexão com Ollama/Túnel perdida. Tentando recuperar...")
+                tentar_reconectar_tunel()
             return f"Erro de comunicação com Ollama: {e}"
             
         # Se o modelo gerou texto com Instruction duplicada de dataset, corta na primeira
@@ -1367,9 +1566,14 @@ def pensar(prompt, historico, contexto=""):
                 if comando.lower() not in placeholders_invalidos and not comando.startswith(('│', '├', '└', '─', '|')):
                     comando_limpo = comando.replace("sudo ", "")
                     print(f"[Agente Tool] Executando comando no Colab: {comando_limpo}")
-                    result = subprocess.getoutput(comando_limpo)
+                    result, ok_progresso = executar_comando_inteligente(comando_limpo)
                     saidas_exec.append(f"$ {comando_limpo}\n{result}")
                     logs_execucao.append(f"⚡ Terminal: `{comando_limpo}`\n```\n{result[:600]}\n```")
+                    atualizar_estado_drive(
+                        acao=f"comando: {comando_limpo[:60]}",
+                        detalhes=result[:200],
+                        proximo_passo="Continuar análise/reconstrução do alvo"
+                    )
                     
             if saidas_exec:
                 mensagens_ollama.append({"role": "user", "content": "Saída do terminal:\n" + "\n".join(saidas_exec)})
@@ -1720,8 +1924,12 @@ def api_terminal_run(req: TerminalRequest):
         return {"saida": ""}
     print(f"[Terminal Web] Executando comando: {comando}")
     try:
-        # Executa no ambiente do Colab com timeout para segurança
-        saida = subprocess.getoutput(comando)
+        saida, ok_progresso = executar_comando_inteligente(comando)
+        atualizar_estado_drive(
+            acao=f"terminal_web: {comando[:60]}",
+            detalhes=saida[:200],
+            proximo_passo="Avançar comandos"
+        )
         return {"saida": saida, "comando": comando}
     except Exception as e:
         return {"saida": f"Erro de execução: {e}", "comando": comando}

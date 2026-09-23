@@ -25,6 +25,7 @@ function App() {
   const [colabUrl, setColabUrl] = useState<string>(() => localStorage.getItem('nexora_colab_url') || '');
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [isChatThinking, setIsChatThinking] = useState(false);
   const [activeProjectDir, setActiveProjectDir] = useState<string>('/home/fabioc/Projeto-Esp32/bleprph');
   const [chatMessages, setChatMessages] = useState<Array<{role: string, content: string}>>(() => {
     try {
@@ -154,8 +155,15 @@ function App() {
                   <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-neutral-500'}`} />
                   <span>{item.label}</span>
                 </div>
-                {item.id === 'chat' && systemStatus && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+                {item.id === 'chat' && (
+                  <div className="flex items-center gap-1.5">
+                    {isChatThinking && (
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" title="Agente pensando..." />
+                    )}
+                    {systemStatus && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+                    )}
+                  </div>
                 )}
               </button>
             );
@@ -197,14 +205,21 @@ function App() {
           </div>
           
           <div className="flex items-center gap-3">
+            {isChatThinking && (
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-xs text-amber-400 font-mono animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                <span>Agente Pensando...</span>
+              </div>
+            )}
+
             <a 
-              href="/nexora_atualizado.zip" 
-              download="nexora_atualizado.zip"
-              title="Baixar ZIP com todas as correções para o Kali Linux"
+              href="/Greeting.zip" 
+              download="Greeting.zip"
+              title="Baixar ZIP Greeting (para extrair e enviar ao GitHub)"
               className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-medium transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Baixar ZIP Atualizado</span>
+              <span>Baixar Greeting.zip</span>
             </a>
 
             {systemStatus && (
@@ -225,9 +240,9 @@ function App() {
           </div>
         </header>
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-auto p-6 md:p-8">
-          {currentView === 'dashboard' && (
+        {/* Content Area - Visualização Persistente Sem Desmontagem */}
+        <main className="flex-1 overflow-auto p-4 md:p-6 min-h-0 relative">
+          <div className={`h-full ${currentView === 'dashboard' ? 'block' : 'hidden'}`}>
             <DashboardView 
               colabUrl={colabUrl} 
               status={systemStatus} 
@@ -235,8 +250,8 @@ function App() {
               onNavigate={(v) => setCurrentView(v)}
               activeDir={activeProjectDir}
             />
-          )}
-          {currentView === 'projetos' && (
+          </div>
+          <div className={`h-full ${currentView === 'projetos' ? 'block' : 'hidden'}`}>
             <ProjetosView 
               activeDir={activeProjectDir}
               onSelectDir={(dir) => {
@@ -244,49 +259,50 @@ function App() {
                 setCurrentView('arquivos');
               }}
             />
-          )}
-          {currentView === 'chat' && (
+          </div>
+          <div className={`h-full ${currentView === 'chat' ? 'flex flex-col' : 'hidden'}`}>
             <ChatView 
               colabUrl={colabUrl} 
               onUrlChange={handleUrlChange}
               activeProjectDir={activeProjectDir}
               messages={chatMessages}
               setMessages={setChatMessages}
+              isThinking={isChatThinking}
+              setIsThinking={setIsChatThinking}
               onSaveToPC={(path, content) => {
-                // Navega para arquivos após salvar
                 setActiveProjectDir(path);
               }}
             />
-          )}
-          {currentView === 'arquivos' && (
+          </div>
+          <div className={`h-full ${currentView === 'arquivos' ? 'flex flex-col' : 'hidden'}`}>
             <ArquivosView 
               colabUrl={colabUrl} 
               initialPath={activeProjectDir}
               onPathChange={(p) => setActiveProjectDir(p)}
             />
-          )}
-          {currentView === 'terminal' && (
+          </div>
+          <div className={`h-full ${currentView === 'terminal' ? 'flex flex-col' : 'hidden'}`}>
             <TerminalView colabUrl={colabUrl} />
-          )}
-          {currentView === 'git' && (
+          </div>
+          <div className={`h-full ${currentView === 'git' ? 'block' : 'hidden'}`}>
             <GitView />
-          )}
-          {currentView === 'github' && (
+          </div>
+          <div className={`h-full ${currentView === 'github' ? 'block' : 'hidden'}`}>
             <GithubView 
               onAddProject={(nome, caminho) => {
                 setActiveProjectDir(caminho);
                 setCurrentView('arquivos');
               }}
             />
-          )}
-          {currentView === 'config' && (
+          </div>
+          <div className={`h-full ${currentView === 'config' ? 'block' : 'hidden'}`}>
             <ConfigView 
               colabUrl={colabUrl} 
               onUrlChange={handleUrlChange}
               status={systemStatus}
               onRefresh={() => checkStatus()}
             />
-          )}
+          </div>
         </main>
       </div>
     </div>
@@ -607,7 +623,9 @@ function ChatView({
   onSaveToPC,
   activeProjectDir,
   messages,
-  setMessages
+  setMessages,
+  isThinking,
+  setIsThinking
 }: { 
   colabUrl: string; 
   onUrlChange: (url: string) => void;
@@ -615,9 +633,30 @@ function ChatView({
   activeProjectDir?: string;
   messages: Array<{role: string, content: string}>;
   setMessages: React.Dispatch<React.SetStateAction<Array<{role: string, content: string}>>>;
+  isThinking?: boolean;
+  setIsThinking?: (val: boolean) => void;
 }) {
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [input, setInput] = useState<string>(() => {
+    try {
+      return localStorage.getItem('nexora_chat_draft_input') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [internalLoading, setInternalLoading] = useState(false);
+  const isLoading = isThinking !== undefined ? isThinking : internalLoading;
+
+  const setLoading = (val: boolean) => {
+    setInternalLoading(val);
+    if (setIsThinking) setIsThinking(val);
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nexora_chat_draft_input', input);
+    } catch {}
+  }, [input]);
+
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'connected' | 'error'>('idle');
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -670,7 +709,10 @@ function ChatView({
     const userMsg = { role: 'user', content: input.trim() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
-    setIsLoading(true);
+    try {
+      localStorage.removeItem('nexora_chat_draft_input');
+    } catch {}
+    setLoading(true);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutos de tolerância para compilação C++, download de toolchains e modelos locais
@@ -704,7 +746,7 @@ function ChatView({
       }
       setMessages(prev => [...prev, { role: 'assistant', content: msgErro }]);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
@@ -1315,7 +1357,20 @@ function ArquivosView({
 // --- 5. TERMINAL VIEW (SHELL REAL DO COLAB) ---
 
 function TerminalView({ colabUrl }: { colabUrl: string }) {
-  const [comando, setComando] = useState('');
+  const [comando, setComando] = useState<string>(() => {
+    try {
+      return localStorage.getItem('nexora_terminal_draft_cmd') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nexora_terminal_draft_cmd', comando);
+    } catch {}
+  }, [comando]);
+
   const [historicoOutput, setHistoricoOutput] = useState<Array<{ cmd: string; saida: string }>>(() => {
     try {
       const saved = localStorage.getItem('nexora_terminal_history');
@@ -1352,6 +1407,9 @@ function TerminalView({ colabUrl }: { colabUrl: string }) {
     setIsExecuting(true);
     setHistoricoOutput(prev => [...prev, { cmd, saida: 'Executando...' }]);
     setComando('');
+    try {
+      localStorage.removeItem('nexora_terminal_draft_cmd');
+    } catch {}
 
     try {
       const cleanUrl = colabUrl.trim().replace(/\/$/, '');

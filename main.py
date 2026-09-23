@@ -4,6 +4,7 @@ import argparse
 import requests
 import subprocess
 import re
+from collections import deque
 
 # Configurações iniciais passadas pelo Colab
 parser = argparse.ArgumentParser()
@@ -658,29 +659,122 @@ def preparar_toolchain(tipo):
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq golang-go")
 
     elif tipo == "re":
-        print("[Toolchain] Verificando ferramentas de Engenharia Reversa (radare2, binwalk, ent, xxd, mido, capstone)...")
-        chk_r2 = subprocess.getoutput("which r2 2>/dev/null")
-        chk_binwalk = subprocess.getoutput("which binwalk 2>/dev/null")
-        if not chk_r2 or not chk_binwalk:
-            logs.append("⚡ [Toolchain RE] Instalando ferramentas binárias (radare2, binwalk, ent, xxd, binutils)...")
-            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq binutils file xxd hexdump binwalk ent radare2")
-        subprocess.getoutput("pip install -q pefile capstone lief construct kaitai-struct mido pretty_midi python-rtmidi")
+        print("[Toolchain] Verificando ferramentas de Engenharia Reversa...")
+        if os.path.exists("./setup_re.sh"):
+            logs.append("⚡ [Toolchain RE] Executando setup_re.sh...")
+            out_setup = subprocess.getoutput("bash ./setup_re.sh 2>&1")
+            logs.append(out_setup[-400:] if len(out_setup) > 400 else out_setup)
+        elif os.path.exists("/content/Agent-Nexora-Colab/setup_re.sh"):
+            logs.append("⚡ [Toolchain RE] Executando setup_re.sh...")
+            out_setup = subprocess.getoutput("bash /content/Agent-Nexora-Colab/setup_re.sh 2>&1")
+            logs.append(out_setup[-400:] if len(out_setup) > 400 else out_setup)
+        else:
+            chk_r2 = subprocess.getoutput("which r2 2>/dev/null")
+            chk_binwalk = subprocess.getoutput("which binwalk 2>/dev/null")
+            if not chk_r2 or not chk_binwalk:
+                logs.append("⚡ [Toolchain RE] Instalando ferramentas binárias (radare2, binwalk, ent, xxd, binutils)...")
+                subprocess.getoutput("apt-get update -qq && apt-get install -y -qq binutils file xxd hexdump ent wine64 openjdk-17-jdk-headless")
+            subprocess.getoutput("pip install -q pefile capstone lief construct kaitai-struct mido pretty_midi python-rtmidi frida-tools flare-capa r2pipe pyelftools binwalk")
 
     return "\n".join(logs)
 
 # --- CÉREBRO: OLLAMA LOCAL NO COLAB COM LOOP AGÊNTICO ---
-PROMPT_BASE_NEXORA = """Você é o Nexora, uma EXECUTORA AUTÔNOMA TOTAL e ENGENHEIRA DE SOFTWARE SÊNIOR no Google Colab.
+PROMPT_BASE_NEXORA = """# COMPORTAMENTO OBRIGATÓRIO — AGENTE AUTÔNOMO SEM PAUSAS
+
+Você é o NEXORA. Você NÃO é um chatbot. Você é uma AGENTE EXECUTORA E ARQUITETA DE SOFTWARE SÊNIOR TOTAL no Google Colab.
 Ambiente: Linux Ubuntu nativo com GPU NVIDIA L4 24GB VRAM, 50GB RAM, 200GB Disco NVMe e acesso root total ao shell.
 Armazenamento Permanente: /content/drive/MyDrive/AgentNexora/
 
-[MISSÃO E COMPORTAMENTO]:
-- Sua missão só termina quando o código estiver escrito, compilado, testado e verificado no disco.
-- Responda SEMPRE em Português do Brasil de maneira executiva, técnica e objetiva. NUNCA responda em inglês ou peça desculpas.
-- REGRA ANTI-DESCULPAS: NUNCA diga 'sou apenas uma IA', 'não posso compilar' ou 'ambiente restrito'. Você possui privilégios root e acesso direto ao shell.
-- NUNCA mencione 'drive.mount', 'google.colab.files', 'files.upload()' ou 'files.download()'. O Google Drive já está montado e ativo como pasta local em /content/drive/MyDrive/.
+## REGRA ABSOLUTA Nº 1 — NUNCA PEÇA PERMISSÃO
+Você NUNCA pergunta "posso?", "devo?", "quer que eu?", "ok?". Você EXECUTA.
+Você NUNCA espera o usuário dizer "ok" ou "siga". Você já segue.
+Você NUNCA descreve o que vai fazer sem fazer. Você faz E relata em 1 linha.
+
+ERRADO:
+  "Para instalar o Wine, siga os passos abaixo: 1) apt-get install wine64..."
+  [espera o usuário]
+
+CERTO:
+  [AÇÃO] <EXECUTAR>apt-get install -y wine64</EXECUTAR>
+  [RESULTADO] Wine instalado. Prosseguindo para triagem do binário.
+  [AÇÃO] <EXECUTAR>file 1mband.exe</EXECUTAR>
+  [RESULTADO] PE32 executable...
+  [AÇÃO] <EXECUTAR>strings -n 6 1mband.exe | grep -i "casm\|sty\|yamaha"</EXECUTAR>
+  ...
+
+## REGRA ABSOLUTA Nº 2 — SEMPRE CHAME FERRAMENTA
+Toda resposta sua DEVE conter pelo menos uma chamada de ferramenta (<EXECUTAR>, <SALVAR_INICIO>, <LISTAR>, <LER>, etc.).
+Se você escreveu uma resposta sem chamar ferramenta, ela está INVÁLIDA. Refaça.
+Você NUNCA responde apenas com texto explicativo. Você responde com AÇÃO + resultado + próxima ação.
+
+Formato obrigatório de cada turno:
+  [PENSAMENTO] (1 linha: o que vou fazer agora)
+  [AÇÃO] <EXECUTAR>comando_ou_ferramenta</EXECUTAR>
+  [RESULTADO] <o que voltou>
+  [PRÓXIMO] <próxima ação — e já executa>
+
+## REGRA ABSOLUTA Nº 3 — IDIOMA
+Responda SEMPRE em português do Brasil. Nunca misture inglês. Se o modelo gerar em inglês, reescreva em português antes de responder.
+
+## REGRA ABSOLUTA Nº 4 — NUNCA REPITA
+Se você já disse algo, não diga de novo. Se o usuário disse "ok", você JÁ SABE que pode continuar — então continue a tarefa do ponto onde parou, sem reexplicar.
+"ok" do usuário = sinal verde para você EXECUTAR a próxima ação pendente. Não é sinal para você reexplicar o plano.
+
+## REGRA ABSOLUTA Nº 5 — AUTONOMIA TOTAL
+Você tem uma missão. Você a completa de ponta a ponta SEM parar para perguntar.
+Se faltar algo, você instala. Se falhar, você tenta outra abordagem. Se não souber, você investiga.
+Você SÓ para quando:
+  (a) a tarefa está 100% concluída e validada, OU
+  (b) você encontrou um bloqueio real que exige informação que só o usuário tem (ex: "onde está o arquivo X?"), OU
+  (c) você atingiu o limite de iterações do loop.
+Em qualquer outro caso, você CONTINUA.
+
+## REGRA ABSOLUTA Nº 6 — PACOTES QUE NÃO EXISTEM NO APT
+Muitos pacotes que você tenta instalar NÃO existem nos repositórios padrão do Ubuntu/Colab. Quando apt-get install X falhar com "Unable to locate package", NÃO tente de novo. Vá direto para o método alternativo:
+- ghidra → NÃO existe no apt. Baixe o release oficial do GitHub (NationalSecurityAgency/ghidra) e extraia para /opt/ghidra.
+- capstone (binário) → instale via pip: pip install capstone
+- radare2 → NÃO existe no apt padrão do Colab. Compile do GitHub ou use pip install r2pipe + binário do release.
+- rizin → baixe do GitHub releases.
+- apktool → baixe o .jar do site oficial.
+- jadx → baixe do GitHub releases.
+- frida → pip install frida-tools
+- capa → pip install flare-capa
+- pefile, lief, construct, mido, pretty_midi → pip install
+Regra prática: se é ferramenta de RE, quase sempre é pip install ou download direto do GitHub releases. Nunca fique tentando apt-get em loop.
+
+## REGRA ABSOLUTA Nº 7 — NUNCA DIGA "NÃO POSSO"
+Frases proibidas (se aparecerem na sua resposta, ela está errada):
+- "não posso executar"
+- "preciso que você"
+- "você deve instalar"
+- "siga os passos abaixo" (sem executar)
+- "para fazer isso, primeiro..."
+- "vou ajudá-lo a..."
+Substitua por: "Executando agora." e execute.
+
+## REGRA ABSOLUTA Nº 8 — ANTI-LOOP
+Se você perceber que está repetindo a mesma resposta, PARE. Mude de abordagem.
+Se apt-get install X falhou 2 vezes, NÃO tente uma terceira. Use pip ou download direto.
+Se um comando falhou, LEIA o erro, identifique a causa, e tente uma abordagem DIFERENTE.
+
+## REGRA ABSOLUTA Nº 9 — PROGRESSO MENSURÁVEL
+Cada turno seu deve produzir progresso concreto:
+- Um arquivo criado, OU
+- Um comando executado com sucesso, OU
+- Uma descoberta documentada, OU
+- Uma falha analisada com nova hipótese.
+Se um turno não produz nada disso, você está em loop. Saia.
+
+## REGRA ABSOLUTA Nº 10 — MISSÃO ATUAL
+Quando o usuário pedir uma tarefa, você:
+1. Executa a triagem inicial IMEDIATAMENTE (file, hash, strings, etc.)
+2. Instala o que falta SEM perguntar
+3. Prossegue fase por fase da metodologia RE
+4. Documenta no Drive
+5. Entrega resultado final com caminhos e validação
 
 [EXECUÇÃO DE FERRAMENTAS REAIS - APENAS QUANDO FOR AGIR]:
-- Para rodar comando real no terminal: <EXECUTAR>comando_aqui</EXECUTAR>
+- Para rodar comando real no terminal: <EXECUTAR>comando_aqui</EXECUTAR> ou <terminal>comando</terminal>
 - Para salvar código real no Drive:
 <SALVAR_INICIO>/content/drive/MyDrive/AgentNexora/caminho/arquivo.ext
 codigo_real
@@ -923,6 +1017,107 @@ if __name__ == "__main__":
     )
     return resposta
 
+# ============================================================
+# BLOCO 2: ANTI-LOOP E DESTRAVAMENTO DO NEXORA
+# ============================================================
+
+_respostas_recentes = deque(maxlen=5)
+
+# Frases proibidas — se aparecerem, a resposta é descartada e corrigida
+FRASES_PROIBIDAS = [
+    "não posso executar",
+    "nao posso executar",
+    "preciso que você",
+    "preciso que voce",
+    "você deve instalar",
+    "voce deve instalar",
+    "siga os passos abaixo",
+    "siga as etapas abaixo",
+    "vou ajudá-lo",
+    "vou ajuda-lo",
+    "para auxiliá-lo",
+    "para auxilia-lo",
+    "to install wine",
+    "follow these",
+    "follow the steps",
+    "eu não posso compilar",
+    "não permite a execução de comandos shell",
+]
+
+# Palavras que indicam que o modelo está só descrevendo, sem executar
+INDICADORES_DESCRICAO = [
+    "passo 1", "passo 2", "etapa 1", "etapa 2",
+    "step 1", "step 2",
+    "primeiro,", "segundo,",
+]
+
+def contem_tool_call(resposta: str) -> bool:
+    """Verifica se a resposta contém uma chamada de ferramenta real do Nexora."""
+    padroes = [
+        r'<EXECUTAR>', r'</EXECUTAR>', r'<terminal>', r'</terminal>',
+        r'<SALVAR_INICIO>', r'<LISTAR>', r'<LER>',
+        r'\[AÇÃO\]', r'\[ACAO\]', r'\[EXECUTANDO\]', r'\[EXECUTA\]',
+        r'terminal\(', r'write_file\(', r'read_file\(',
+        r'```(?:cpp|c|java|kotlin|python|py|bash|sh)',
+        r'EXECUTAR\s+', r'RUN\s+'
+    ]
+    return any(re.search(p, resposta, re.IGNORECASE) for p in padroes)
+
+def contem_frase_proibida(resposta: str) -> bool:
+    r = resposta.lower()
+    return any(f in r for f in FRASES_PROIBIDAS)
+
+def esta_repetindo(resposta: str) -> bool:
+    """Detecta se o modelo está repetindo a mesma resposta."""
+    r_norm = re.sub(r'\s+', ' ', resposta.lower().strip())[:300]
+    for antiga in _respostas_recentes:
+        if r_norm and antiga and (r_norm in antiga or antiga in r_norm):
+            return True
+    return False
+
+def so_descricao_sem_acao(resposta: str) -> bool:
+    """Detecta resposta que só descreve passos sem executar."""
+    if contem_tool_call(resposta):
+        return False
+    r = resposta.lower()
+    return any(ind in r for ind in INDICADORES_DESCRICAO)
+
+def validar_resposta(resposta: str) -> tuple[bool, str]:
+    """Retorna (valida, motivo_rejeicao)."""
+    if contem_frase_proibida(resposta):
+        return False, "frase_proibida"
+    if esta_repetindo(resposta):
+        return False, "repeticao"
+    if so_descricao_sem_acao(resposta):
+        return False, "so_descricao_sem_acao"
+    if not contem_tool_call(resposta):
+        return False, "sem_tool_call"
+    return True, "ok"
+
+CORRECOES = {
+    "frase_proibida": (
+        "[SISTEMA] Você usou uma frase proibida. Você NÃO pede permissão, "
+        "você EXECUTA. Você está no Linux com terminal e root. Chame uma ferramenta AGORA via <EXECUTAR>. "
+        "Não descreva. Não pergunte. Execute."
+    ),
+    "repeticao": (
+        "[SISTEMA] Você está repetindo a mesma resposta. PARE. "
+        "Mude de abordagem. Se o comando anterior falhou, use um método DIFERENTE. "
+        "Execute uma ação NOVA agora via <EXECUTAR>."
+    ),
+    "so_descricao_sem_acao": (
+        "[SISTEMA] Você apenas descreveu passos sem executar. Isso é inútil. "
+        "Pare de listar 'Passo 1, Passo 2'. EXECUTE o Passo 1 AGORA via <EXECUTAR>. "
+        "Depois execute o Passo 2. Um de cada vez, mas EXECUTE."
+    ),
+    "sem_tool_call": (
+        "[SISTEMA] Sua resposta não contém nenhuma chamada de ferramenta real. "
+        "Toda resposta sua DEVE executar uma ação com <EXECUTAR> ou <SALVAR_INICIO>. "
+        "Se você não sabe o que fazer, comece pela triagem: "
+        "<EXECUTAR>file <alvo> && md5sum <alvo> && strings -n 6 <alvo> | head -100</EXECUTAR>"
+    ),
+}
+
 def pensar(prompt, historico, contexto=""):
     url = "http://localhost:11434/api/chat"
     prompt_limpo = prompt.strip()
@@ -1035,7 +1230,8 @@ def pensar(prompt, historico, contexto=""):
     
     print(f"[Agente] Pensando (contexto: {len(mensagens_ollama)} msgs)...")
     loop_count = 0
-    max_loops = 6
+    max_loops = 12
+    tentativas_correcao = 0
     texto_final = ""
 
     while loop_count < max_loops:
@@ -1075,14 +1271,39 @@ def pensar(prompt, historico, contexto=""):
         except Exception as e:
             return f"Erro de comunicação com Ollama: {e}"
             
+        # Se o modelo gerou texto com Instruction duplicada de dataset, corta na primeira
+        if "\n### Instruction:" in texto:
+            texto = texto.split("\n### Instruction:")[0].strip()
+        elif "### Instruction:" in texto:
+            texto = texto.split("### Instruction:")[0].strip()
+
+        # Validação Anti-Loop e Destravamento (BLOCO 2)
+        valida, motivo = validar_resposta(texto)
+        if not valida:
+            tentativas_correcao += 1
+            print(f"[Anti-Loop Nexora] Resposta rejeitada: motivo='{motivo}' (tentativa {tentativas_correcao}/{max_loops})")
+            if tentativas_correcao >= 3:
+                mensagens_ollama.append({
+                    "role": "system",
+                    "content": (
+                        "[SISTEMA] Você falhou 3 vezes seguidas descrevendo sem agir. "
+                        "EXECUTE ESTE COMANDO AGORA via <EXECUTAR>: "
+                        "<EXECUTAR>ls -la /content/drive/MyDrive/AgentNexora/ && file /content/drive/MyDrive/AgentNexora/*</EXECUTAR>"
+                    )
+                })
+                tentativas_correcao = 0
+            else:
+                mensagens_ollama.append({"role": "assistant", "content": texto})
+                mensagens_ollama.append({
+                    "role": "system",
+                    "content": CORRECOES.get(motivo, CORRECOES["sem_tool_call"])
+                })
+            continue
+
+        tentativas_correcao = 0
+        _respostas_recentes.append(re.sub(r'\s+', ' ', texto.lower().strip())[:300])
         mensagens_ollama.append({"role": "assistant", "content": texto})
         texto_final = texto
-        
-        # Se o modelo gerou texto com Instruction duplicada de dataset, corta na primeira
-        if "\n### Instruction:" in texto_final:
-            texto_final = texto_final.split("\n### Instruction:")[0].strip()
-        elif "### Instruction:" in texto_final:
-            texto_final = texto_final.split("### Instruction:")[0].strip()
         
         # --- PROCESSAR TAGS EXPLÍCITAS (IGNORANDO PLACEHOLDERS DE EXEMPLO) ---
         tem_acao = False

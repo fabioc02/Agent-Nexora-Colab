@@ -657,27 +657,27 @@ def preparar_toolchain(tipo):
             logs.append("⚡ [Toolchain] Instalando Go...")
             subprocess.getoutput("apt-get update -qq && apt-get install -y -qq golang-go")
 
+    elif tipo == "re":
+        print("[Toolchain] Verificando ferramentas de Engenharia Reversa (radare2, binwalk, ent, xxd, mido, capstone)...")
+        chk_r2 = subprocess.getoutput("which r2 2>/dev/null")
+        chk_binwalk = subprocess.getoutput("which binwalk 2>/dev/null")
+        if not chk_r2 or not chk_binwalk:
+            logs.append("⚡ [Toolchain RE] Instalando ferramentas binárias (radare2, binwalk, ent, xxd, binutils)...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq binutils file xxd hexdump binwalk ent radare2")
+        subprocess.getoutput("pip install -q pefile capstone lief construct kaitai-struct mido pretty_midi python-rtmidi")
+
     return "\n".join(logs)
 
 # --- CÉREBRO: OLLAMA LOCAL NO COLAB COM LOOP AGÊNTICO ---
-SYSTEM_PROMPT = """Você é o Nexora, um ENGENHEIRO DE SOFTWARE E ARQUITETO DE SISTEMAS SÊNIOR TOTAL no Google Colab.
+PROMPT_BASE_NEXORA = """Você é o Nexora, uma EXECUTORA AUTÔNOMA TOTAL e ENGENHEIRA DE SOFTWARE SÊNIOR no Google Colab.
 Ambiente: Linux Ubuntu nativo com GPU NVIDIA L4 24GB VRAM, 50GB RAM, 200GB Disco NVMe e acesso root total ao shell.
 Armazenamento Permanente: /content/drive/MyDrive/AgentNexora/
 
-[IDIOMA OBRIGATÓRIO]:
+[MISSÃO E COMPORTAMENTO]:
+- Sua missão só termina quando o código estiver escrito, compilado, testado e verificado no disco.
 - Responda SEMPRE em Português do Brasil de maneira executiva, técnica e objetiva. NUNCA responda em inglês ou peça desculpas.
-
-[CONSCIÊNCIA DE HARDWARE E PODER COMPUTACIONAL]:
-- Você possui acesso direto ao shell com privilégios root em uma máquina Linux potente (GPU L4 24GB, 50GB RAM).
-- Você executa comandos de verdade no terminal com <EXECUTAR>, salva códigos com <SALVAR_INICIO>, instala pacotes com pip/apt e compila binários. NUNCA diga para o usuário digitar no terminal.
+- REGRA ANTI-DESCULPAS: NUNCA diga 'sou apenas uma IA', 'não posso compilar' ou 'ambiente restrito'. Você possui privilégios root e acesso direto ao shell.
 - NUNCA mencione 'drive.mount', 'google.colab.files', 'files.upload()' ou 'files.download()'. O Google Drive já está montado e ativo como pasta local em /content/drive/MyDrive/.
-
-[ENGENHARIA REVERSA DE TECLADOS ARRANJADORES E STYLES KORG PA]:
-- Você domina a estrutura interna de arquivos .sty da Korg (Pa4x, Pa3x, Pa1000) e teclados arranjadores.
-- Estrutura do Style: Container baseado em SMF (Standard MIDI File) com seções Intro 1-3, Var 1-4, Fill 1-3, Break, Ending 1-3 e Chord Variations (CV1-CV6).
-- Mapeamento Korg: Canal 10 (Drums), Canal 11 (Percussion), Canal 9 (Bass), Canais 12 a 15 (Acc 1 a 4), Canal 8 (Acc 5).
-- Motor de Acordes / NTT (Note Trigger Table): O pattern é gravado originalmente em tom base Dó (C). Em tempo real, a mão esquerda do tecladista gera uma tônica e escala que transpoe o baixo e os instrumentos com regras de transposição de tônica, conversão de terça maior para terça menor em acordes menores, inversões de baixo (Slash Chords) e wrap-around de oitava para manter o baixo encorpado.
-- Sempre gere scripts Python robustos com mido e struct para dissecar arquivos binários.
 
 [EXECUÇÃO DE FERRAMENTAS REAIS - APENAS QUANDO FOR AGIR]:
 - Para rodar comando real no terminal: <EXECUTAR>comando_aqui</EXECUTAR>
@@ -688,6 +688,130 @@ codigo_real
 - Para listar pasta real: <LISTAR>/content/drive/MyDrive/AgentNexora</LISTAR>
 - Para ler arquivo real: <LER>/content/drive/MyDrive/AgentNexora/arquivo.ext</LER>
 """
+
+MODULO_RE_CONDENSADO = """# MÓDULO RE — ENGENHARIA REVERSA DE SOFTWARE, SISTEMAS E ARRANJADORES
+
+Você é especialista em engenharia reversa de software, firmwares e formatos binários. Ative este módulo quando o usuário pedir análise de binário, formato, "como funciona por dentro", decompilação, disassembly ou arquivos de teclados musicais.
+
+METODOLOGIA OBRIGATÓRIA (nunca pule etapas):
+1. TRIAGEM: file, md5sum, sha256sum, ls -la, strings -n 6, binwalk, xxd | head, ent
+2. IDENTIFICAÇÃO: formato (ELF/PE/Mach-O/APK/DEX/firmware), arquitetura, endianness, compilador, packer
+3. ESTRUTURA: headers, seções, chunks, tabelas de ponteiros, magic bytes
+4. SEMÂNTICA: hipótese para cada campo, correlacionar com strings/imports
+5. COMPORTAMENTO: análise dinâmica (gdb, Frida, Wine) — input → output
+6. RECONSTRUÇÃO: ferramenta que replica o comportamento, validada byte-a-byte
+
+FERRAMENTAS que você instala e usa sozinha no terminal:
+- Triagem: file, xxd, hexdump, strings, binwalk, ent, exiftool
+- Binários: readelf, objdump, nm, pefile, LIEF, otool
+- Decompilação: Ghidra headless, radare2, rizin, capstone
+- Debug: gdb, pwndbg, Frida, x64dbg (via Wine), ltrace, strace
+- Mobile: apktool, jadx, dex2jar, dexdump
+- Formatos: construct, kaitai-struct, mido, pretty_midi, python-rtmidi
+- Detecção: capa (Mandiant), detecção de UPX, análise de entropia
+
+ESPECIALIDADE — TECLADOS ARRANJADORES:
+- Yamaha .STY (SFF1/SFF2): SMF (MThd) + chunk CASM
+- CASM contém: Ctab, NTR (Root Fixed/Transposition/Guitar), NTT (Bypass/Melody/Chord/Bass/Harmonic Minor), retrigger, key limits
+- Endianness Yamaha CASM: BIG-ENDIAN
+- Korg: .STY/.SET/.STG, .KMP, .KSF, .PCG
+- Roland: .STL, .PRS, .UPS
+- Sempre trabalhe em cópia. Sempre calcule hash antes.
+- Ao cruzar com software existente (One Man Band, StyleMagic), use-o como ORÁCULO: input conhecido → output observado → comparação com sua doc do formato.
+
+ESTRUTURA DE PROJETOS RE NO DRIVE:
+Cada alvo de engenharia reversa fica organizado em:
+/content/drive/MyDrive/AgentNexora/RE/<nome_alvo>/
+    ├── original/          (cópia intacta + hash)
+    ├── analise/           (triagem.txt, strings.txt, estrutura.md, achados.md)
+    ├── ferramentas/       (scripts criados)
+    └── README.md          (documentação final)
+
+REGRAS DE OURO:
+- NUNCA invente offsets, magic bytes ou estruturas sem evidência hex.
+- NUNCA diga "não posso" — diga "vou investigar" e investigue com terminal (<EXECUTAR>).
+- SEMPRE trabalhe em cópias dos originais.
+- SEMPRE documente: comando → saída → conclusão.
+- FOQUE: não decompile o alvo inteiro. Escolha uma funcionalidade e vá fundo.
+- Se faltar ferramenta, INSTALE sozinha (apt, pip, git clone).
+
+FORMATO DE RESPOSTA RE:
+[ALVO] Nome, hash, tamanho, tipo.
+[TRIAGEM] Comandos executados e saída relevante.
+[IDENTIFICAÇÃO] Formato, arquitetura, endianness, proteções detectadas.
+[MAPA ESTRUTURAL] Headers, seções, chunks, tabelas identificadas.
+[ANÁLISE] Descobertas com evidência (offset, hex, comando).
+[HIPÓTESES] O que se acha que significa, com nível de confiança.
+[VALIDAÇÃO] Como confirmar/refutar cada hipótese.
+[ENTREGA] Ferramenta, documentação ou conclusão.
+"""
+
+SYSTEM_PROMPT = PROMPT_BASE_NEXORA + "\n\n" + MODULO_RE_CONDENSADO
+
+def criar_workspace_re(nome_alvo, arquivo_alvo=None):
+    """
+    Cria a estrutura de pastas e executa FASE 1 (Triagem) automaticamente para projetos de RE.
+    """
+    nome_sanitizado = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', nome_alvo)
+    dir_re = f"/content/drive/MyDrive/AgentNexora/RE/{nome_sanitizado}"
+    dir_orig = f"{dir_re}/original"
+    dir_analise = f"{dir_re}/analise"
+    dir_tools = f"{dir_re}/ferramentas"
+    
+    os.makedirs(dir_orig, exist_ok=True)
+    os.makedirs(dir_analise, exist_ok=True)
+    os.makedirs(dir_tools, exist_ok=True)
+    
+    logs = [f"📁 Workspace RE criado em `{dir_re}`"]
+    
+    if arquivo_alvo and os.path.exists(arquivo_alvo):
+        nome_arq = os.path.basename(arquivo_alvo)
+        copia_orig = f"{dir_orig}/{nome_arq}"
+        if not os.path.exists(copia_orig):
+            subprocess.getoutput(f"cp -f '{arquivo_alvo}' '{copia_orig}'")
+        
+        # Triagem automática (Fase 1)
+        triagem_txt = f"{dir_analise}/triagem.txt"
+        t_file = subprocess.getoutput(f"file '{copia_orig}'")
+        t_md5 = subprocess.getoutput(f"md5sum '{copia_orig}'")
+        t_sha = subprocess.getoutput(f"sha256sum '{copia_orig}'")
+        t_ls = subprocess.getoutput(f"ls -la '{copia_orig}'")
+        t_xxd = subprocess.getoutput(f"xxd '{copia_orig}' | head -40")
+        
+        with open(triagem_txt, "w", encoding="utf-8") as f_tri:
+            f_tri.write(f"=== FASE 1: TRIAGEM - {nome_arq} ===\n\n")
+            f_tri.write(f"Arquivo: {copia_orig}\n")
+            f_tri.write(f"Tamanho & Permissões:\n{t_ls}\n\n")
+            f_tri.write(f"Hashes:\nMD5:    {t_md5}\nSHA256: {t_sha}\n\n")
+            f_tri.write(f"Tipo (file):\n{t_file}\n\n")
+            f_tri.write(f"Primeiros Bytes (xxd head):\n{t_xxd}\n\n")
+            
+        # Extração de strings
+        strings_txt = f"{dir_analise}/strings.txt"
+        t_strings = subprocess.getoutput(f"strings -n 6 '{copia_orig}' | head -300")
+        with open(strings_txt, "w", encoding="utf-8") as f_str:
+            f_str.write(t_strings)
+            
+        # Template README.md
+        readme_md = f"{dir_re}/README.md"
+        if not os.path.exists(readme_md):
+            with open(readme_md, "w", encoding="utf-8") as f_rm:
+                f_rm.write(f"# Projeto RE: {nome_sanitizado}\n\n"
+                           f"## 1. Identificação do Alvo\n"
+                           f"- **Arquivo:** `{nome_arq}`\n"
+                           f"- **MD5:** `{t_md5.split()[0] if t_md5 else ''}`\n"
+                           f"- **SHA256:** `{t_sha.split()[0] if t_sha else ''}`\n"
+                           f"- **Tipo:** `{t_file}`\n\n"
+                           f"## 2. Mapa Estrutural\n"
+                           f"(A preencher via análise de seções/headers)\n\n"
+                           f"## 3. Descobertas e Semântica\n"
+                           f"Consulte `analise/estrutura.md` e `analise/achados.md`.\n\n"
+                           f"## 4. Ferramentas Reconstruídas\n"
+                           f"Consulte `ferramentas/`.\n")
+        logs.append(f"🔍 FASE 1 (Triagem) executada! Relatório em `{triagem_txt}`.")
+        
+    return dir_re, "\n".join(logs)
+
 
 def processar_pedido_korg_style(prompt_limpo, caminho_especifico=None):
     """
@@ -859,11 +983,49 @@ def pensar(prompt, historico, contexto=""):
     # Janela deslizante de contexto: envia apenas as últimas 5 mensagens para o Ollama
     max_contexto = 5
     recentes = [m for m in historico if m.get("role") != "system"][-max_contexto:]
+    logs_execucao = []
     
     system_content = SYSTEM_PROMPT
     if contexto.strip():
         system_content += f"\n\n[CONTEXTO ATIVO DO PROJETO SELECIONADO PELO USUÁRIO]:\n{contexto.strip()}\n"
         
+    # Detector de Intenção RE (Engenharia Reversa)
+    palavras_re = [
+        'engenharia reversa', 'reverse', 'reverso', 'decompilar', 'decompilacao', 'decompilação',
+        'disassembly', 'desmontar', 'binário', 'binario', 'casm', 'ntt', 'ntr',
+        'sty', 'korg', 'yamaha', 'roland', 'apk', 'dex', 'elf', 'pe', 'dll',
+        'firmware', 'magic bytes', 'offset', 'hexdump', 'binwalk', 'radare2',
+        'ghidra', 'jadx', 'apktool', 'capstone', 'lief', 'construct', 'kaitai',
+        'como funciona por dentro', 'descobrir formato', 'analise de binario', 'análise de binário',
+        'strings', 'triagem'
+    ]
+    modo_re_ativo = any(w in prompt_limpo.lower() for w in palavras_re)
+    if modo_re_ativo:
+        print(f"[Agente RE Engine] Ativando Módulo de Engenharia Reversa para: {prompt_limpo[:60]}...")
+        re_tool_log = preparar_toolchain("re")
+        if re_tool_log:
+            logs_execucao.append(re_tool_log)
+        system_content += (
+            "\n\n[MODO RE ATIVO - ENGENHARIA REVERSA]:\n"
+            "Comece SEMPRE pela FASE 1 (TRIAGEM). Inspecione com ferramentas reais via terminal (<EXECUTAR>). "
+            "NUNCA especule offsets ou magic bytes sem evidência. Trabalhe em cópias do original em /content/drive/MyDrive/AgentNexora/RE/<alvo>/.\n"
+            "Mapeie headers, seções e use Python com construct/mido/struct para dissecar o formato."
+        )
+        
+        # Se houver um arquivo mencionado no prompt, inicializa automaticamente o workspace RE
+        for part in prompt_limpo.split():
+            clean_part = part.strip("'\"")
+            exts_re = ('.sty', '.set', '.pcg', '.kmp', '.ksf', '.apk', '.dex', '.elf', '.bin', '.exe', '.dll', '.so', '.mid', '.sys')
+            if clean_part.lower().endswith(exts_re):
+                nome_base = os.path.splitext(os.path.basename(clean_part))[0]
+                caminho_arq = clean_part if os.path.exists(clean_part) else None
+                if not caminho_arq and os.path.exists(f"/content/drive/MyDrive/AgentNexora/ArquivosPC/{os.path.basename(clean_part)}"):
+                    caminho_arq = f"/content/drive/MyDrive/AgentNexora/ArquivosPC/{os.path.basename(clean_part)}"
+                dir_re_proj, log_ws = criar_workspace_re(nome_base, caminho_arq)
+                logs_execucao.append(log_ws)
+                system_content += f"\n[WORKSPACE RE ATIVO]: Projeto organizado em `{dir_re_proj}`. Arquivos originais e relatórios de triagem em `{dir_re_proj}/analise/`."
+                break
+
     # Se o usuário pede explicitamente criação, compilação ou instalação, reforça o modo executivo
     termos_acao = ['compile', 'compilar', 'executavel', 'crie', 'criar', 'instale', 'instalar', 'desenvolva', 'sdk', 'sequenciador', 'groovestation', 'build']
     if any(t in prompt.lower() for t in termos_acao):
@@ -875,7 +1037,6 @@ def pensar(prompt, historico, contexto=""):
     loop_count = 0
     max_loops = 6
     texto_final = ""
-    logs_execucao = []
 
     while loop_count < max_loops:
         loop_count += 1
@@ -884,9 +1045,10 @@ def pensar(prompt, historico, contexto=""):
             "messages": mensagens_ollama,
             "stream": False,
             "options": {
-                "num_ctx": 4096,
-                "num_predict": 1024,
-                "temperature": 0.2,
+                "num_ctx": 32768,
+                "num_predict": -1,
+                "temperature": 0.1,
+                "top_p": 0.95,
                 "repeat_penalty": 1.15,
                 "stop": [
                     "### Instruction:",

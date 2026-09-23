@@ -54,11 +54,12 @@ print("Baixando o Agente Nexora...")
 !git clone https://github.com/fabioc02/Agent-Nexora-Colab.git
 %cd Agent-Nexora-Colab
 
-print("Instalando pacotes do Nexora...")
+print("Instalando pacotes do Nexora e Toolchain de Engenharia Reversa...")
 !pip install -r requirements.txt
+!bash setup_re.sh
 
 print("\n" + "="*50)
-print(" AGENTE PRONTO E RODANDO NO TERMINAL ABAIXO!")
+print(" AGENTE NEXORA + MÓDULO RE PRONTO E RODANDO!")
 print("="*50 + "\n")
 !python main.py --bridge_url $LINK_DO_SEU_PC --modelo $MODELO_DEEPSEEK --memoria_dir "/content/drive/MyDrive/AgentNexora/memory"
 ```

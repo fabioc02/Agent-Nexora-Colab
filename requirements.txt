@@ -1,8 +1,18 @@
 # Dependências para o Agente rodar no Colab
 requests==2.31.0
-
-# (Opcional) Dependências para rodar a ponte_local.py no seu PC
 fastapi
 uvicorn
 pyngrok
 pydantic
+
+# Módulo de Engenharia Reversa (RE) & DSP/MIDI
+pefile
+capstone
+lief
+construct
+kaitai-struct
+mido
+pretty_midi
+python-rtmidi
+frida-tools
+flare-capa

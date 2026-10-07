@@ -1,0 +1,8 @@
+# Ferramentas Python para Engenharia Reversa (RE), Análise de Binários & DSP/MIDI
+pefile
+capstone
+construct
+kaitaistruct
+mido
+pretty_midi
+lief

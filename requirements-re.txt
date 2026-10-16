@@ -6,3 +6,7 @@ kaitaistruct
 mido
 pretty_midi
 lief
+pyelftools
+r2pipe
+frida-tools
+flare-capa

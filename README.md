@@ -176,4 +176,27 @@ O script detectará automaticamente o **Tailscale IP** e também iniciará o tú
 
 Basta colar os endereços na Interface Web do Nexora!
 
+---
+
+## 🔬 REA (Reverse Engineer Anything - morluto/rea) & Wine Sandbox
+
+O Nexora Agent agora integra nativamente a suíte **REA** ([github.com/morluto/rea](https://github.com/morluto/rea)) e um ambiente de execução controlada **Wine Headless** (via Xvfb):
+
+### Recursos Integrados:
+1. **Visibilidade Total do Linux**: O agente pode navegar e inspecionar qualquer pasta do sistema (`/`, `/opt/ghidra`, `/root/.wine`, `/usr`, `/content/drive/MyDrive/AgentNexora`).
+2. **Dissecção de Binários Windows (PE32 / PE64)**:
+   - Identificação automática da arquitetura (32-bit x86 vs 64-bit x86_64).
+   - Extração de seções, cálculo de entropia e detecção de packers (UPX, Themida).
+   - Mapeamento completo de DLLs importadas e funções de API.
+3. **Descompactação de Instaladores (InnoSetup & 7-Zip)**:
+   - Extração direta com `innoextract` e `7z` para inspecionar binários internos sem necessidade de rodar instaladores.
+4. **Testes Dinâmicos no Wine (Headless / Xvfb)**:
+   - Execução virtualizada sem congelar terminais remotos.
+   - Diagnóstico automático de incompatibilidade 32/64-bit (prevenção do erro `c000007b`).
+   - Detecção inteligente de DLLs ausentes (`status c0000135`) com sugestão automática de `winetricks`.
+5. **Persistência no Google Drive**:
+   - Todos os relatórios de triagem, arquivos originais, logs do Wine e códigos reconstruídos são salvos em:  
+     `/content/drive/MyDrive/AgentNexora/RE/<nome_alvo>/`
+
+
 

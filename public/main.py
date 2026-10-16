@@ -130,6 +130,16 @@ class ProjectContextRequest(BaseModel):
     arquivos_fixados: list = []
     notas: str = ""
 
+class REAAnalyzeRequest(BaseModel):
+    caminho: str
+    output_dir: str = ""
+
+class REAWineTestRequest(BaseModel):
+    caminho_exe: str
+    args_win: str = ""
+    prefixo: str = ""
+    timeout: int = 60
+
 ALLOWED_DRIVE_DIR = "/content/drive/MyDrive/AgentNexora"
 
 # --- FUNÇÕES DE MEMÓRIA (GOOGLE DRIVE) ---
@@ -199,14 +209,22 @@ PRESETS_INSTRUCOES = [
         "ativa": False
     },
     {
-        "id": "engenharia_reversa",
-        "titulo": "🔍 Engenharia Reversa & Binários (Ghidra, Wine, ELF, PE)",
+        "id": "engenharia_reversa_rea",
+        "titulo": "🔬 REA — Reverse Engineer Anything & Wine Sandbox (morluto/rea, Ghidra, PE, Wine64)",
         "conteudo": (
-            "Você atua como pesquisador sênior em engenharia reversa. "
-            "Disseque formatos binários proprietários (como styles .sty da Korg/Yamaha, executáveis Windows .exe via Wine, firmware e APKs). "
-            "Inspecione com ferramentas reais via terminal (<EXECUTAR>), utilize strings, hexdump, radare2 e scripts Python com construct/struct."
+            "Você atua como pesquisador sênior em engenharia reversa com a suíte REA (morluto/rea) e sandbox Wine no Linux.\n"
+            "DIRETRIZES TÉCNICAS OBRIGATÓRIAS:\n"
+            "1. VISIBILIDADE TOTAL DO LINUX: Você tem acesso irrestrito ao sistema (/root, /usr, /opt, /etc, ~/.wine, /content) para inspecionar, instalar e executar qualquer ferramenta com privilégios de root.\n"
+            "2. ENGENHARIA REVERSA COM REA (morluto/rea): Disseque binários nativos (PE .exe/.dll, ELF, APKs, formats .sty). Utilize `rea analyze`, pefile, objdump, Ghidra headless, radare2, strings e scripts Python com construct.\n"
+            "3. TESTES E EXECUÇÃO NO WINE: Para analisar ou testar executáveis Windows (.exe/.dll):\n"
+            "   - Identifique a arquitetura PE (32-bit vs 64-bit).\n"
+            "   - Execute testes no Wine de forma headless (`xvfb-run -a wine <programa.exe>` ou ferramenta `wine_test`) para não travar o terminal.\n"
+            "   - Diagnostique erros de DLL ausente ou incompatibilidade de arquitetura (erro c000007b de 32 vs 64-bit).\n"
+            "   - Se for instalador InnoSetup, extraia arquivos com `innoextract -d <dir> <arquivo.exe>` para análise direta dos binários sem instalador.\n"
+            "4. PERSISTÊNCIA NO GOOGLE DRIVE: Todos os relatórios, cópias originais e ferramentas devem ser organizados em `/content/drive/MyDrive/AgentNexora/RE/<nome_alvo>/`.\n"
+            "5. AÇÃO DIRETA: Execute comandos via <tool_call> ou <EXECUTAR> sem hesitação ou passos manuais passivos."
         ),
-        "ativa": False
+        "ativa": True
     },
     {
         "id": "modo_hacker_irrestrito",
@@ -335,38 +353,40 @@ def listar_pc(caminho):
         return {"status": "erro", "erro": f"Erro ao conectar ao PC via ponte ({bridge}): {e}", "items": []}
 
 
-# --- FUNÇÕES DE ACESSO AO COLAB/DRIVE ---
+# --- FUNÇÕES DE ACESSO AO AMBIENTE LINUX E GOOGLE DRIVE ---
 def verificar_seguranca_drive(caminho):
-    # Permite navegar e trabalhar em qualquer caminho em /content (Colab) ou /tmp
-    if caminho.startswith("/content") or caminho.startswith("/tmp") or caminho.startswith("."):
-        return True
-    return False
+    # O agente Nexora tem acesso irrestrito ao ambiente Linux
+    # (/root, /usr, /opt, /etc, /tmp, /content, ~/.wine, etc.)
+    return True
 
 def listar_local(caminho):
-    if not verificar_seguranca_drive(caminho): 
-        return "ACESSO NEGADO: Diretório fora do workspace /content do Colab."
     try:
-        if not os.path.exists(caminho):
-            os.makedirs(caminho, exist_ok=True)
-        return "\n".join(os.listdir(caminho))
+        caminho_exp = os.path.expanduser(caminho.strip() or ".")
+        if not os.path.exists(caminho_exp):
+            if "AgentNexora" in caminho_exp:
+                os.makedirs(caminho_exp, exist_ok=True)
+            else:
+                return f"Diretório não encontrado: {caminho}"
+        if not os.path.isdir(caminho_exp):
+            return f"{caminho} é um arquivo (tamanho: {os.path.getsize(caminho_exp)} bytes)."
+        entradas = sorted(os.listdir(caminho_exp))
+        return "\n".join(entradas) if entradas else "O diretório está vazio."
     except Exception as e:
         return str(e)
 
 def ler_local(caminho):
-    if not verificar_seguranca_drive(caminho): 
-        return "ACESSO NEGADO: Fora do workspace do Colab."
     try:
-        with open(caminho, 'r', encoding='utf-8', errors='ignore') as f: 
+        caminho_exp = os.path.expanduser(caminho.strip())
+        with open(caminho_exp, 'r', encoding='utf-8', errors='ignore') as f: 
             return f.read()
     except Exception as e:
         return str(e)
 
 def salvar_local(caminho, conteudo):
-    if not verificar_seguranca_drive(caminho): 
-        return False
     try:
-        os.makedirs(os.path.dirname(caminho), exist_ok=True)
-        with open(caminho, 'w', encoding='utf-8') as f: 
+        caminho_exp = os.path.expanduser(caminho.strip())
+        os.makedirs(os.path.dirname(caminho_exp), exist_ok=True)
+        with open(caminho_exp, 'w', encoding='utf-8') as f: 
             f.write(conteudo)
         return True
     except Exception as e:
@@ -900,6 +920,24 @@ Executa código Python diretamente no ambiente.
 {"name": "python_eval", "arguments": {"code": "import torch; print(torch.cuda.get_device_name(0))"}}
 </tool_call>
 
+6. `rea_analyze` (Engenharia Reversa com morluto/rea + pefile):
+Dissecação profunda de binários (PE .exe/.dll, ELF, Mach-O, APKs).
+<tool_call>
+{"name": "rea_analyze", "arguments": {"target": "/caminho/do/arquivo.exe"}}
+</tool_call>
+
+7. `wine_test` (Executar e Testar Programa Windows no Wine Headless):
+Executa programa Windows em sandbox Wine com captura de logs e diagnóstico automático de DLLs ausentes ou erro c000007b.
+<tool_call>
+{"name": "wine_test", "arguments": {"executable": "/caminho/do/programa.exe", "arguments": ""}}
+</tool_call>
+
+8. `innoextract` (Descompactar Instalador InnoSetup Windows):
+Extrai arquivos e DLLs internas de instaladores sem precisar executar instalador no Wine.
+<tool_call>
+{"name": "innoextract", "arguments": {"installer": "/caminho/do/instalador.exe", "destination": "/content/drive/MyDrive/AgentNexora/RE/alvo/descompactado"}}
+</tool_call>
+
 ## REGRA ABSOLUTA Nº 1 — NUNCA PEÇA PERMISSÃO NEM ENVIE TUTORIAL PASSIVO
 Você NUNCA diz "você deve abrir o terminal", "siga os passos abaixo" ou "digite o comando".
 VOCÊ TEM O TERMINAL ROOT! Você EXECUTA diretamente pelo tool_call ou tag.
@@ -910,32 +948,41 @@ Para tarefas técnicas (gerar código, inspecionar arquivos, compilar, engenhari
 ## REGRA ABSOLUTA Nº 3 — IDIOMA
 Responda SEMPRE em português do Brasil com rigor técnico, clareza e precisão.
 
-## REGRA ABSOLUTA Nº 4 — GERENCIAMENTO DE PACOTES
+## REGRA ABSOLUTA Nº 4 — GERENCIAMENTO DE PACOTES E WINE
 No Ubuntu Colab, lembre-se:
 - Ferramentas Python: `pip install <pacote>`
 - Compilação C/C++/SDL2: `g++`, `cmake`, `libsdl2-dev`
 - Windows PE: `x86_64-w64-mingw32-g++`
 - Ghidra: `/opt/ghidra/support/analyzeHeadless`
+- REA: `rea analyze <alvo>` ou ferramenta `rea_analyze`
+- Wine: use `xvfb-run -a wine <prog.exe>` para não congelar terminal sem display.
 - Se um comando der erro, analise a saída no `<scratchpad>` e execute a correção imediatamente."""
 
 
-MODULO_RE_CONDENSADO = """# MÓDULO RE — ENGENHARIA REVERSA DE SOFTWARE, SISTEMAS E ARRANJADORES
+MODULO_RE_CONDENSADO = """# MÓDULO RE — ENGENHARIA REVERSA COM REA (morluto/rea) & WINE SANDBOX
 
-Você é especialista em engenharia reversa de software, firmwares e formatos binários. Ative este módulo quando o usuário pedir análise de binário, formato, "como funciona por dentro", decompilação, disassembly ou arquivos de teclados musicais.
+Você é especialista em engenharia reversa de software, firmwares, binários nativos e formatos proprietários.
+Ative este módulo quando o usuário pedir análise de binário, formato, "como funciona por dentro", decompilação, disassembly, programas de Windows ou arquivos de teclados musicais.
 
-METODOLOGIA OBRIGATÓRIA (nunca pule etapas):
-1. TRIAGEM: file, md5sum, sha256sum, ls -la, strings -n 6, binwalk, xxd | head, ent
-2. IDENTIFICAÇÃO: formato (ELF/PE/Mach-O/APK/DEX/firmware), arquitetura, endianness, compilador, packer
-3. ESTRUTURA: headers, seções, chunks, tabelas de ponteiros, magic bytes
-4. SEMÂNTICA: hipótese para cada campo, correlacionar com strings/imports
-5. COMPORTAMENTO: análise dinâmica (gdb, Frida, Wine) — input → output
-6. RECONSTRUÇÃO: ferramenta que replica o comportamento, validada byte-a-byte
+METODOLOGIA OBRIGATÓRIA REA (nunca pule etapas):
+1. TRIAGEM: file, md5sum, sha256sum, ls -la, strings -n 6, binwalk, xxd | head, ent, rea analyze
+2. IDENTIFICAÇÃO: formato (ELF/PE32/PE32+/Mach-O/APK/DEX/firmware), arquitetura (32 vs 64-bit), endianness, compilador, packer (UPX/Themida)
+3. ESTRUTURA: headers, seções, imports (DLLs necessárias), exports, tabelas de ponteiros, magic bytes
+4. SEMÂNTICA: hipótese para cada campo, correlacionar com strings/imports, decompilação com Ghidra/Rizin
+5. COMPORTAMENTO E TESTES NO WINE: análise dinâmica controlada:
+   - Para .exe/.dll de Windows: identifique arquitetura (32 vs 64-bit).
+   - Execute com `wine_test` ou `xvfb-run -a wine <programa.exe>` para evitar travamentos de GUI.
+   - Diagnostique erros de DLL ausente (`status c0000135`) ou erro `c000007b` (mistura de DLL 32-bit em 64-bit).
+   - Se for instalador InnoSetup, extraia diretamente com `innoextract -d <pasta> <instalador.exe>`.
+6. RECONSTRUÇÃO: ferramenta ou código Python/C++ que replica o comportamento, validada byte-a-byte
 
 FERRAMENTAS que você instala e usa sozinha no terminal:
+- REA Suite: `rea`, `npx rea-agents@latest`, `rea doctor`
 - Triagem: file, xxd, hexdump, strings, binwalk, ent, exiftool
-- Binários: readelf, objdump, nm, pefile, LIEF, otool
+- Descompactação: innoextract, 7z (p7zip-full), cabextract, unshield
+- Binários Windows & Linux: readelf, objdump, nm, pefile, LIEF
+- Wine Sandbox: wine, wine64, winetricks, xvfb-run, winedbg
 - Decompilação: Ghidra headless, radare2, rizin, capstone
-- Debug: gdb, pwndbg, Frida, x64dbg (via Wine), ltrace, strace
 - Mobile: apktool, jadx, dex2jar, dexdump
 - Formatos: construct, kaitaistruct, mido, pretty_midi, python-rtmidi
 - Detecção: capa (Mandiant), detecção de UPX, análise de entropia
@@ -1858,6 +1905,36 @@ def pensar(prompt, historico, contexto="", instrucao=""):
                         logs_execucao.append(f"🐍 **Python Eval:**\n```\n{res_py[:600]}\n```")
                         mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"python_eval\", \"output\": {json.dumps(res_py[:1000])}}}\n</tool_response>"})
                         tem_acao = True
+
+                elif fn_name in ["rea_analyze", "rea", "analisar_rea"]:
+                    target_val = fn_args.get("target") or fn_args.get("caminho") or fn_args.get("path") or ""
+                    if target_val:
+                        from rea_engine import analisar_com_rea
+                        res_rea = analisar_com_rea(target_val)
+                        logs_execucao.append(f"🔬 **REA Suite (morluto/rea):** `{os.path.basename(target_val)}`\n- Relatório: `{res_rea.get('relatorio', '')}`\n- Arquitetura: `{res_rea.get('pe_info', {}).get('arch', 'N/A')}`")
+                        mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_analyze\", \"result\": {json.dumps(res_rea.get('resumo_md', '')[:1500])}}}\n</tool_response>"})
+                        tem_acao = True
+
+                elif fn_name in ["wine_test", "wine_run", "testar_wine", "wine"]:
+                    exe_val = fn_args.get("executable") or fn_args.get("exe") or fn_args.get("caminho") or fn_args.get("path") or ""
+                    args_val = fn_args.get("arguments") or fn_args.get("args") or ""
+                    timeout_val = int(fn_args.get("timeout", 60))
+                    if exe_val:
+                        from rea_engine import executar_teste_wine
+                        res_wine = executar_teste_wine(exe_val, args_val, timeout_segundos=timeout_val)
+                        logs_execucao.append(f"🍷 **Teste no Wine (Headless):** `{exe_val}`\n- Exit Code: `{res_wine.get('exit_code')}`\n- Diagnósticos:\n" + "\n".join(res_wine.get('diagnosticos', [])))
+                        mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"wine_test\", \"diagnostics\": {json.dumps(res_wine.get('diagnosticos', []))}, \"output\": {json.dumps(res_wine.get('saida_resumida', '')[:1000])}}}\n</tool_response>"})
+                        tem_acao = True
+
+                elif fn_name in ["innoextract", "extrair_instalador"]:
+                    inst_val = fn_args.get("installer") or fn_args.get("caminho") or ""
+                    dest_val = fn_args.get("destination") or fn_args.get("destino") or ""
+                    if inst_val:
+                        dest_str = f"-d '{dest_val}'" if dest_val else ""
+                        res_inno = subprocess.getoutput(f"innoextract {dest_str} '{inst_val}' 2>&1")
+                        logs_execucao.append(f"📦 **Extração InnoSetup:** `{inst_val}`\n```\n{res_inno[:400]}\n```")
+                        mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"innoextract\", \"output\": {json.dumps(res_inno[:1500])}}}\n</tool_response>"})
+                        tem_acao = True
             except Exception as e_tc:
                 print(f"[Hermes Tool Parse Error]: {e_tc} em: {tc_str[:80]}")
 
@@ -1902,12 +1979,23 @@ def pensar(prompt, historico, contexto="", instrucao=""):
                 print(f"[Agente Tool] Salvou arquivo: {caminho}")
                 tem_acao = True
             
-        elif ("<EXECUTAR>" in texto and "</EXECUTAR>" in texto) or ("<terminal>" in texto and "</terminal>" in texto) or any(l.strip().startswith(("EXECUTAR ", "RUN ")) for l in texto.splitlines()):
+        elif ("<EXECUTAR>" in texto and "</EXECUTAR>" in texto) or ("<terminal>" in texto and "</terminal>" in texto) or "<EXECUTAR>" in texto or "<terminal>" in texto or any(l.strip().startswith(("EXECUTAR ", "RUN ")) for l in texto.splitlines()):
             comandos_encontrados = []
-            if "<EXECUTAR>" in texto and "</EXECUTAR>" in texto:
-                comandos_encontrados.append(texto.split("<EXECUTAR>")[1].split("</EXECUTAR>")[0].strip())
-            if "<terminal>" in texto and "</terminal>" in texto:
-                comandos_encontrados.append(texto.split("<terminal>")[1].split("</terminal>")[0].strip())
+            # Captura todas as tags de execução com regex tolerante a variações e maiúsculas/minúsculas
+            tags_cmds = re.findall(r'<(?:EXECUTAR|terminal|bash|shell|exec)>(.*?)</(?:EXECUTAR|EXECUTOR|EXECOTOR|terminal|bash|shell|exec)>', texto, re.DOTALL | re.IGNORECASE)
+            for tc in tags_cmds:
+                c_clean = tc.strip()
+                if c_clean and c_clean not in comandos_encontrados:
+                    comandos_encontrados.append(c_clean)
+                    
+            # Fallback se fechou com tag incompleta
+            if not comandos_encontrados and "<EXECUTAR>" in texto:
+                partes = texto.split("<EXECUTAR>")[1:]
+                for p in partes:
+                    cmd_p = p.split("<")[0].strip()
+                    if cmd_p and cmd_p not in comandos_encontrados:
+                        comandos_encontrados.append(cmd_p)
+
             for linha in texto.splitlines():
                 l_s = linha.strip()
                 if l_s.startswith(("EXECUTAR ", "RUN ")):
@@ -1941,7 +2029,7 @@ def pensar(prompt, historico, contexto="", instrucao=""):
         prompt_lower = prompt.lower()
         
         # 1. AUTO-IDENTIFICAÇÃO DE TOOLCHAIN NECESSÁRIA
-        if any(w in prompt_lower for w in ['android', 'apk', 'gradle']):
+        if any(w in prompt_lower for w in ['android', 'apk', 'gradle']) and 'android studio' not in prompt_lower:
             tool_log = preparar_toolchain("android")
             if tool_log: logs_execucao.append(tool_log)
         elif any(w in prompt_lower for w in ['windows', '.exe', 'mingw']):
@@ -1956,7 +2044,7 @@ def pensar(prompt, historico, contexto="", instrucao=""):
         if any(w in prompt_lower for w in ['groove', 'sequenciador', 'sequencer', 'som', 'audio', 'bpm']):
             dir_proj = "/content/drive/MyDrive/AgentNexora/groovestation"
             nome_exec_padrao = "groovestation_gui"
-        elif any(w in prompt_lower for w in ['android', 'apk']):
+        elif any(w in prompt_lower for w in ['android', 'apk']) and 'android studio' not in prompt_lower:
             nome_app_android = extrair_nome_app_android(prompt)
             dir_proj = f"/content/drive/MyDrive/AgentNexora/AndroidApps/{nome_app_android}"
             nome_exec_padrao = f"{nome_app_android}.apk"
@@ -2024,7 +2112,7 @@ def pensar(prompt, historico, contexto="", instrucao=""):
                     logs_execucao.append(f"⚠️ [Tentativa MinGW]:\n```\n{out_res[:500]}\n```")
 
         # B) Compilação Android (APK)
-        elif ('android' in prompt_lower or 'apk' in prompt_lower) and pediu_build:
+        elif ('android' in prompt_lower or 'apk' in prompt_lower) and pediu_build and 'android studio' not in prompt_lower:
             nome_app_android = extrair_nome_app_android(prompt)
             sucesso_android, log_android = compilar_projeto_android(nome_app_android)
             if sucesso_android:
@@ -2548,22 +2636,21 @@ def api_files_list(req: FileListRequest):
     origem = req.origem.lower()
     items = []
     
-    if origem == "drive" or caminho.startswith("/content") or caminho.startswith("/drive"):
-        if caminho.startswith("/drive"):
-            alvo = "/content" + caminho
-        elif caminho.startswith("/content"):
+    if origem in ["drive", "colab", "linux"] or caminho.startswith("/") or caminho.startswith("~"):
+        if caminho.startswith("~"):
+            alvo = os.path.expanduser(caminho)
+        elif caminho.startswith("/"):
             alvo = caminho
         else:
             alvo = os.path.join(ALLOWED_DRIVE_DIR, caminho.lstrip("./"))
 
-        if not verificar_seguranca_drive(alvo):
-            return {"erro": "Acesso negado fora do workspace /content do Colab", "items": [], "caminho_atual": alvo}
         try:
+            alvo = os.path.normpath(alvo)
             if not os.path.exists(alvo):
                 if "AgentNexora" in alvo:
                     os.makedirs(alvo, exist_ok=True)
                 else:
-                    return {"erro": f"Diretório '{alvo}' não encontrado no Colab/Google Drive.", "items": [], "caminho_atual": alvo}
+                    return {"erro": f"Diretório '{alvo}' não encontrado no Linux/Colab.", "items": [], "caminho_atual": alvo}
 
             if not os.path.isdir(alvo):
                 return {"erro": f"'{alvo}' é um arquivo e não um diretório.", "items": [], "caminho_atual": alvo}
@@ -2627,7 +2714,7 @@ def api_files_read(req: FileReadRequest):
     caminho = req.caminho.strip()
     origem = req.origem.lower()
     
-    if origem == "drive" or caminho.startswith("/content"):
+    if origem in ["drive", "colab", "linux"] or caminho.startswith("/") or caminho.startswith("~"):
         conteudo = ler_local(caminho)
         return {"conteudo": conteudo, "caminho": caminho}
     else:
@@ -2640,12 +2727,30 @@ def api_files_save(req: FileSaveRequest):
     origem = req.origem.lower()
     conteudo = req.conteudo
     
-    if origem == "drive" or caminho.startswith("/content"):
+    if origem in ["drive", "colab", "linux"] or caminho.startswith("/") or caminho.startswith("~"):
         ok = salvar_local(caminho, conteudo)
         return {"sucesso": ok, "caminho": caminho}
     else:
         ok = salvar_pc(caminho, conteudo)
         return {"sucesso": ok, "caminho": caminho}
+
+# --- ENDPOINTS REA (morluto/rea) & WINE SANDBOX ---
+@api_app.get("/api/rea/status")
+def api_rea_status():
+    from rea_engine import verificar_status_rea
+    return verificar_status_rea()
+
+@api_app.post("/api/rea/analyze")
+def api_rea_analyze(req: REAAnalyzeRequest):
+    from rea_engine import analisar_com_rea
+    res = analisar_com_rea(req.caminho, req.output_dir or None)
+    return res
+
+@api_app.post("/api/rea/wine_test")
+def api_rea_wine_test(req: REAWineTestRequest):
+    from rea_engine import executar_teste_wine
+    res = executar_teste_wine(req.caminho_exe, req.args_win, req.prefixo or None, req.timeout)
+    return res
 
 @api_app.post("/api/terminal/run")
 def api_terminal_run(req: TerminalRequest):

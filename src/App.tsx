@@ -9,7 +9,7 @@ import {
   Sliders, ShieldAlert, Edit3, Wand2, BookOpen
 } from 'lucide-react';
 
-type View = 'dashboard' | 'projetos' | 'instrucoes' | 'chat' | 'arquivos' | 'terminal' | 'git' | 'github' | 'config';
+type View = 'dashboard' | 'rea' | 'projetos' | 'instrucoes' | 'chat' | 'arquivos' | 'terminal' | 'git' | 'github' | 'config';
 
 interface SystemStatus {
   status: string;
@@ -37,6 +37,24 @@ export interface CustomInstruction {
 
 export const DEFAULT_PRESETS: CustomInstruction[] = [
   {
+    id: 'engenharia_reversa_rea',
+    titulo: '🔬 REA — Reverse Engineer Anything & Wine Sandbox (morluto/rea, Ghidra, PE, Wine64)',
+    tag: 'REA / Reverse Engineering',
+    descricao: 'Dissecação com morluto/rea, análise estática PE/ELF, extração InnoSetup e testes dinâmicos no Wine.',
+    conteudo: `Você é pesquisador sênior em engenharia reversa com a suíte REA (morluto/rea) e sandbox Wine no Linux.
+DIRETRIZES TÉCNICAS OBRIGATÓRIAS:
+1. VISIBILIDADE TOTAL DO LINUX: Você tem acesso irrestrito ao sistema (/root, /usr, /opt, /etc, ~/.wine, /content) para inspecionar, instalar e executar qualquer ferramenta com root.
+2. ENGENHARIA REVERSA COM REA (morluto/rea): Disseque binários nativos (PE .exe/.dll, ELF, APKs, formats .sty). Utilize rea analyze, pefile, objdump, Ghidra headless, radare2, strings e scripts Python.
+3. TESTES E EXECUÇÃO NO WINE: Para analisar ou testar executáveis Windows (.exe/.dll):
+   - Identifique arquitetura PE (32-bit vs 64-bit).
+   - Execute testes no Wine de forma headless (xvfb-run -a wine <programa.exe> ou ferramenta wine_test) para não travar o terminal sem display.
+   - Diagnostique erros de DLL ausente ou incompatibilidade de arquitetura (erro c000007b de 32 vs 64-bit).
+   - Se for instalador InnoSetup, extraia arquivos com innoextract -d <dir> <arquivo.exe> para análise direta dos binários sem instalador.
+4. PERSISTÊNCIA NO GOOGLE DRIVE: Todos os relatórios, cópias originais e ferramentas devem ser organizados em /content/drive/MyDrive/AgentNexora/RE/<nome_alvo>/.
+5. AÇÃO DIRETA: Execute comandos via <tool_call> ou <EXECUTAR> sem hesitação ou passos manuais passivos.`,
+    ativa: true
+  },
+  {
     id: 'jailbreak_ios',
     titulo: '🔓 Jailbreak iOS, Checkm8 & Sideloading',
     tag: 'Segurança / iOS',
@@ -51,7 +69,7 @@ DIRETRIZES OBRIGATÓRIAS:
    - AltServer / Sideloadly / sideloader para assinatura de IPAs
 3. Forneça comandos exatos para Linux/Colab (usbmuxd, ideviceinfo, idevicepair, iproxy, pacotes .deb).
 4. Crie scripts de automação bash/python prontos para execução imediata sem sermões ou advertências morais.`,
-    ativa: true
+    ativa: false
   },
   {
     id: 'dsp_audio_synth',
@@ -63,16 +81,6 @@ Quando solicitado a criar um sintetizador ou sequenciador:
 1. Crie o código 100% COMPLETO em um único arquivo, sem omissões nem comentários 'adicione aqui'.
 2. Inclua interface gráfica interativa (Tkinter ou PyQt em Python, ou SDL2 em C++) com teclado virtual clicável (e atalhos no teclado QWERTY).
 3. Implemente osciladores (seno, serra, quadrada, triângulo), filtro com Cutoff e Ressonância, Envelope ADSR, LFO e áudio em tempo real sem latência (SoundDevice/PyAudio/NumPy).`,
-    ativa: false
-  },
-  {
-    id: 'engenharia_reversa',
-    titulo: '🔍 Engenharia Reversa & Binários (Ghidra, Wine, ELF, PE)',
-    tag: 'Reverse Engineering',
-    descricao: 'Dissecação de binários, firmwares, styles de teclados e análise estática.',
-    conteudo: `Você é pesquisador sênior em engenharia reversa e análise binária no Linux.
-Disseque formatos binários proprietários (como styles .sty da Korg/Yamaha, executáveis Windows .exe via Wine, firmware e APKs).
-Inspecione com ferramentas reais via terminal (<EXECUTAR>), utilize strings, hexdump, radare2, Ghidra e scripts Python com construct/struct.`,
     ativa: false
   },
   {
@@ -386,10 +394,11 @@ function App() {
 
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { id: 'rea', icon: Sparkles, label: '🔬 REA & Wine Sandbox' },
     { id: 'projetos', icon: Folder, label: 'Projetos' },
     { id: 'instrucoes', icon: Sliders, label: 'Instruções & Jailbreak' },
     { id: 'chat', icon: MessageSquare, label: 'Chat do Agente' },
-    { id: 'arquivos', icon: FileCode, label: 'Arquivos' },
+    { id: 'arquivos', icon: FileCode, label: 'Arquivos & Linux' },
     { id: 'terminal', icon: TerminalIcon, label: 'Terminal' },
     { id: 'git', icon: GitBranch, label: 'Git' },
     { id: 'github', icon: Github, label: 'GitHub' },
@@ -562,6 +571,18 @@ function App() {
               onNavigate={(v) => setCurrentView(v)}
               onOpenBridgeModal={() => setShowBridgeModal(true)}
               activeDir={activeProjectDir}
+            />
+          </div>
+          <div className={`h-full ${currentView === 'rea' ? 'flex flex-col' : 'hidden'}`}>
+            <REAView 
+              colabUrl={colabUrl}
+              onNavigateToChat={(msg) => {
+                if (msg) {
+                  setChatMessages(prev => [...prev, { id: String(Date.now()), role: 'user', content: msg, time: new Date().toLocaleTimeString('pt-BR') }]);
+                }
+                setCurrentView('chat');
+              }}
+              onNavigateToTerminal={() => setCurrentView('terminal')}
             />
           </div>
           <div className={`h-full ${currentView === 'projetos' ? 'block' : 'hidden'}`}>
@@ -1010,14 +1031,26 @@ function DashboardView({
             <h3 className="text-base font-semibold text-white">Ações Rápidas</h3>
           </div>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <button 
+              onClick={() => onNavigate('rea')}
+              className="p-4 bg-gradient-to-br from-cyan-950/40 to-blue-950/30 hover:from-cyan-950/60 hover:to-blue-950/50 rounded-lg border border-cyan-500/30 text-left transition-colors group"
+            >
+              <Sparkles className="w-5 h-5 text-cyan-400 mb-2 group-hover:scale-110 transition-transform" />
+              <div className="text-sm font-medium text-white flex items-center gap-1.5">
+                REA & Wine Sandbox
+                <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1 rounded font-mono">REA</span>
+              </div>
+              <div className="text-xs text-neutral-400 mt-1">morluto/rea + Wine + Ghidra</div>
+            </button>
+
             <button 
               onClick={() => onNavigate('chat')}
               className="p-4 bg-white/5 hover:bg-white/10 rounded-lg border border-white/5 text-left transition-colors group"
             >
               <MessageSquare className="w-5 h-5 text-emerald-400 mb-2 group-hover:scale-110 transition-transform" />
               <div className="text-sm font-medium text-white">Abrir Chat</div>
-              <div className="text-xs text-neutral-500 mt-1">Converse com o DeepSeek</div>
+              <div className="text-xs text-neutral-500 mt-1">Converse com o Hermes 3</div>
             </button>
 
             <button 
@@ -1026,7 +1059,7 @@ function DashboardView({
             >
               <FileCode className="w-5 h-5 text-blue-400 mb-2 group-hover:scale-110 transition-transform" />
               <div className="text-sm font-medium text-white">Ver Arquivos</div>
-              <div className="text-xs text-neutral-500 mt-1">Navegue no seu PC</div>
+              <div className="text-xs text-neutral-500 mt-1">Linux, Drive & PC</div>
             </button>
 
             <button 
@@ -2544,8 +2577,8 @@ function ArquivosView({
       {/* Topo do Explorador */}
       <div className="p-3 bg-[#111] border-b border-white/5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          {/* Alternador Origem */}
-          <div className="bg-black/60 border border-white/10 rounded-lg p-0.5 flex text-xs">
+          {/* Alternador Origem e Pastas do Sistema */}
+          <div className="bg-black/60 border border-white/10 rounded-lg p-0.5 flex flex-wrap gap-1 text-xs">
             <button
               onClick={() => {
                 setOrigem('pc');
@@ -2554,7 +2587,7 @@ function ArquivosView({
                 onPathChange(p);
                 loadFiles(p, 'pc');
               }}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
+              className={`px-2 py-1 rounded-md transition-colors ${
                 origem === 'pc' ? 'bg-emerald-600 text-white font-medium' : 'text-neutral-400 hover:text-white'
               }`}
             >
@@ -2563,16 +2596,60 @@ function ArquivosView({
             <button
               onClick={() => {
                 setOrigem('drive');
-                const p = '/content/drive/MyDrive';
+                const p = '/content/drive/MyDrive/AgentNexora';
                 setCurrentPath(p);
                 onPathChange(p);
                 loadFiles(p, 'drive');
               }}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
-                origem === 'drive' ? 'bg-emerald-600 text-white font-medium' : 'text-neutral-400 hover:text-white'
+              className={`px-2 py-1 rounded-md transition-colors ${
+                origem === 'drive' && currentPath.includes('AgentNexora') && !currentPath.includes('/RE') ? 'bg-emerald-600 text-white font-medium' : 'text-neutral-400 hover:text-white'
               }`}
             >
-              ☁️ Google Drive
+              ☁️ Drive
+            </button>
+            <button
+              onClick={() => {
+                setOrigem('drive');
+                const p = '/content/drive/MyDrive/AgentNexora/RE';
+                setCurrentPath(p);
+                onPathChange(p);
+                loadFiles(p, 'drive');
+              }}
+              className={`px-2 py-1 rounded-md transition-colors ${
+                currentPath.includes('/RE') ? 'bg-cyan-600 text-white font-medium' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              🔬 Projetos RE
+            </button>
+            <button
+              onClick={() => {
+                setOrigem('drive');
+                const p = '/';
+                setCurrentPath(p);
+                onPathChange(p);
+                loadFiles(p, 'drive');
+              }}
+              className={`px-2 py-1 rounded-md transition-colors ${
+                currentPath === '/' ? 'bg-purple-600 text-white font-medium' : 'text-neutral-400 hover:text-white'
+              }`}
+              title="Acesso completo ao sistema de arquivos Linux"
+            >
+              🐧 Linux (/)
+            </button>
+            <button
+              onClick={() => {
+                setOrigem('drive');
+                const p = '/root/.wine/drive_c';
+                setCurrentPath(p);
+                onPathChange(p);
+                loadFiles(p, 'drive');
+              }}
+              className={`px-2 py-1 rounded-md transition-colors ${
+                currentPath.includes('.wine') ? 'bg-amber-600 text-white font-medium' : 'text-neutral-400 hover:text-white'
+              }`}
+              title="Diretório C: do Wine"
+            >
+              🍷 Wine (C:)
             </button>
           </div>
 
@@ -4195,4 +4272,597 @@ python3 ponte_local.py`}
   );
 }
 
+// ==============================================================================
+// VISÃO REA & WINE SANDBOX (morluto/rea + Ghidra Headless + Wine64)
+// ==============================================================================
+
+function REAView({
+  colabUrl,
+  onNavigateToChat,
+  onNavigateToTerminal
+}: {
+  colabUrl: string;
+  onNavigateToChat: (msg?: string) => void;
+  onNavigateToTerminal: () => void;
+}) {
+  const [targetPath, setTargetPath] = useState('/content/drive/MyDrive/AgentNexora/WindowsApps/app.exe');
+  const [wineArgs, setWineArgs] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isTestingWine, setIsTestingWine] = useState(false);
+  const [isInstallingToolchain, setIsInstallingToolchain] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [wineResult, setWineResult] = useState<any>(null);
+  const [toolchainStatus, setToolchainStatus] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'pe' | 'wine' | 'report' | 'tools'>('pe');
+  const [installLog, setInstallLog] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const checkTools = async () => {
+    if (!colabUrl.trim()) return;
+    try {
+      const clean = colabUrl.trim().replace(/\/$/, '');
+      const res = await fetch(`${clean}/api/rea/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setToolchainStatus(data);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    checkTools();
+    const interval = setInterval(checkTools, 15000);
+    return () => clearInterval(interval);
+  }, [colabUrl]);
+
+  const handleAnalyze = async () => {
+    if (!colabUrl.trim()) {
+      alert('Conecte o servidor do Colab primeiro na aba Chat ou Configurações.');
+      return;
+    }
+    if (!targetPath.trim()) return;
+    setIsAnalyzing(true);
+    try {
+      const clean = colabUrl.trim().replace(/\/$/, '');
+      const res = await fetch(`${clean}/api/rea/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caminho: targetPath.trim() })
+      });
+      const data = await res.json();
+      setAnalysisResult(data);
+      setActiveTab('pe');
+    } catch (e: any) {
+      alert(`Erro ao analisar com REA: ${e.message || e}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleTestWine = async () => {
+    if (!colabUrl.trim()) {
+      alert('Conecte o servidor do Colab primeiro.');
+      return;
+    }
+    if (!targetPath.trim()) return;
+    setIsTestingWine(true);
+    try {
+      const clean = colabUrl.trim().replace(/\/$/, '');
+      const res = await fetch(`${clean}/api/rea/wine_test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          caminho_exe: targetPath.trim(), 
+          args_win: wineArgs.trim(), 
+          timeout: 60 
+        })
+      });
+      const data = await res.json();
+      setWineResult(data);
+      setActiveTab('wine');
+    } catch (e: any) {
+      alert(`Erro no teste Wine: ${e.message || e}`);
+    } finally {
+      setIsTestingWine(false);
+    }
+  };
+
+  const handleInstallToolchain = async () => {
+    if (!colabUrl.trim()) return;
+    setIsInstallingToolchain(true);
+    setInstallLog('Iniciando instalação da toolchain REA (morluto/rea), Wine64 e Ghidra no Colab...');
+    try {
+      const clean = colabUrl.trim().replace(/\/$/, '');
+      const res = await fetch(`${clean}/api/terminal/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comando: 'bash setup_re.sh' })
+      });
+      const data = await res.json();
+      setInstallLog(data.saida || 'Instalação concluída.');
+      await checkTools();
+    } catch (e: any) {
+      setInstallLog(`Erro: ${e.message || e}`);
+    } finally {
+      setIsInstallingToolchain(false);
+    }
+  };
+
+  const handleSendToChat = () => {
+    const prompt = `Analise o arquivo '${targetPath}' com a metodologia REA (morluto/rea). Identifique o formato e realize testes no Wine headless se for executável de Windows.`;
+    onNavigateToChat(prompt);
+  };
+
+  const copyLog = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex flex-col h-full space-y-4">
+      {/* Top Header & Title */}
+      <div className="bg-[#111] border border-white/5 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 rounded-xl text-cyan-400">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-white tracking-wide">
+                REA — Reverse Engineer Anything & Wine Sandbox
+              </h2>
+              <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono px-2 py-0.5 rounded-full">
+                morluto/rea
+              </span>
+            </div>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Engenharia reversa agêntica, dissecção de PE/ELF, extração de instaladores e execução controlada no Wine.
+            </p>
+          </div>
+        </div>
+
+        {/* Status badges */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-black/40 border border-white/10 rounded-lg text-xs font-mono">
+            <span className={`w-2 h-2 rounded-full ${toolchainStatus?.rea_cli ? 'bg-cyan-400' : 'bg-neutral-600'}`} />
+            <span>REA CLI: {toolchainStatus?.rea_cli ? 'Pronto' : 'Setup Pendente'}</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-black/40 border border-white/10 rounded-lg text-xs font-mono">
+            <span className={`w-2 h-2 rounded-full ${toolchainStatus?.wine64 || toolchainStatus?.wine ? 'bg-emerald-400' : 'bg-neutral-600'}`} />
+            <span>Wine: {toolchainStatus?.wine64 ? 'Wine64 (Xvfb)' : toolchainStatus?.wine ? 'Wine' : 'Ausente'}</span>
+          </div>
+          <button
+            onClick={checkTools}
+            className="p-1.5 bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white rounded border border-white/10 transition-colors"
+            title="Atualizar status das ferramentas"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Target File Input & Actions Bar */}
+      <div className="bg-[#111] border border-white/5 rounded-xl p-5 space-y-4">
+        <div>
+          <label className="text-xs font-semibold text-neutral-300 block mb-1.5">
+            Caminho do Binário Alvo (Linux, Drive ou Wine):
+          </label>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              value={targetPath}
+              onChange={(e) => setTargetPath(e.target.value)}
+              placeholder="/content/drive/MyDrive/AgentNexora/meu_app.exe ou /root/.wine/drive_c/..."
+              className="flex-1 bg-black/60 border border-white/10 focus:border-cyan-500 rounded-lg px-3.5 py-2 text-xs font-mono text-cyan-300 focus:outline-none"
+            />
+            <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              {isAnalyzing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              <span>{isAnalyzing ? 'Analisando...' : 'Analisar com REA'}</span>
+            </button>
+            <button
+              onClick={handleTestWine}
+              disabled={isTestingWine}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              {isTestingWine ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              <span>{isTestingWine ? 'Executando...' : 'Testar no Wine'}</span>
+            </button>
+            <button
+              onClick={handleSendToChat}
+              className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+              title="Mandar instrução de engenharia reversa para o Hermes 3"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Pedir ao Agente</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Path Pills */}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+          <span className="text-[11px] text-neutral-500">Atalhos rápidos:</span>
+          <button 
+            onClick={() => setTargetPath('/content/drive/MyDrive/AgentNexora/WindowsApps/app.exe')}
+            className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[11px] font-mono text-neutral-300 transition-colors"
+          >
+            WindowsApps/app.exe
+          </button>
+          <button 
+            onClick={() => setTargetPath('/content/drive/MyDrive/AgentNexora/RE/')}
+            className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[11px] font-mono text-neutral-300 transition-colors"
+          >
+            Drive/AgentNexora/RE/
+          </button>
+          <button 
+            onClick={() => setTargetPath('/root/.wine/drive_c/')}
+            className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[11px] font-mono text-neutral-300 transition-colors"
+          >
+            ~/.wine/drive_c/
+          </button>
+          <button 
+            onClick={() => setTargetPath('/opt/ghidra/support/analyzeHeadless')}
+            className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[11px] font-mono text-neutral-300 transition-colors"
+          >
+            /opt/ghidra/
+          </button>
+        </div>
+
+        {/* Optional Wine Arguments */}
+        <div className="pt-2 border-t border-white/5 flex items-center gap-3">
+          <span className="text-xs text-neutral-400 whitespace-nowrap">Argumentos Wine:</span>
+          <input 
+            type="text" 
+            value={wineArgs}
+            onChange={(e) => setWineArgs(e.target.value)}
+            placeholder="/c /q ou --help (opcional)"
+            className="flex-1 bg-black/40 border border-white/10 focus:border-purple-500 rounded px-3 py-1 text-xs font-mono text-neutral-300 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Main Workspace Tabs */}
+      <div className="flex-1 flex flex-col bg-[#111] border border-white/5 rounded-xl overflow-hidden min-h-0">
+        {/* Navigation Tabs */}
+        <div className="flex items-center justify-between px-4 bg-[#141414] border-b border-white/5">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setActiveTab('pe')}
+              className={`px-3 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === 'pe'
+                  ? 'border-cyan-400 text-cyan-300 font-semibold'
+                  : 'border-transparent text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>Visão PE & Dissecção</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('wine')}
+              className={`px-3 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === 'wine'
+                  ? 'border-purple-400 text-purple-300 font-semibold'
+                  : 'border-transparent text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Play className="w-3.5 h-3.5" />
+              <span>Logs do Wine & Diagnóstico</span>
+              {wineResult?.diagnosticos?.length > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('report')}
+              className={`px-3 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === 'report'
+                  ? 'border-emerald-400 text-emerald-300 font-semibold'
+                  : 'border-transparent text-neutral-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Relatório Drive (Markdown)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('tools')}
+              className={`px-3 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === 'tools'
+                  ? 'border-blue-400 text-blue-300 font-semibold'
+                  : 'border-transparent text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Toolchain Status (rea doctor)</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onNavigateToTerminal}
+              className="text-xs text-neutral-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5"
+            >
+              <TerminalIcon className="w-3.5 h-3.5" /> Abrir Terminal
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        <div className="flex-1 overflow-auto p-5">
+          {/* TAB 1: PE Overview */}
+          {activeTab === 'pe' && (
+            <div className="space-y-5">
+              {!analysisResult ? (
+                <div className="text-center py-14 text-neutral-500 space-y-3">
+                  <Sparkles className="w-10 h-10 mx-auto text-neutral-600 opacity-50" />
+                  <p className="text-sm">Nenhum binário analisado ainda.</p>
+                  <p className="text-xs text-neutral-600 max-w-md mx-auto">
+                    Insira o caminho de um arquivo .exe, .dll, .sty, ELF ou instalador acima e clique em "Analisar com REA".
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {/* Cards de Métricas Principais */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="bg-black/40 border border-white/5 rounded-lg p-3.5">
+                      <span className="text-[11px] text-neutral-400">Arquitetura</span>
+                      <div className="text-sm font-bold text-white mt-1">
+                        {analysisResult.pe_info?.arch || 'ELF / Nativo'}
+                      </div>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        {analysisResult.pe_info?.bits ? `${analysisResult.pe_info.bits}-bit` : 'Linux'}
+                      </span>
+                    </div>
+
+                    <div className="bg-black/40 border border-white/5 rounded-lg p-3.5">
+                      <span className="text-[11px] text-neutral-400">Subsystem</span>
+                      <div className="text-sm font-bold text-white mt-1 truncate">
+                        {analysisResult.pe_info?.subsystem || 'N/A'}
+                      </div>
+                      <span className="text-[10px] text-neutral-500 font-mono truncate block">
+                        EP: {analysisResult.pe_info?.entry_point || '0x0'}
+                      </span>
+                    </div>
+
+                    <div className="bg-black/40 border border-white/5 rounded-lg p-3.5">
+                      <span className="text-[11px] text-neutral-400">Proteção / Packer</span>
+                      <div className={`text-sm font-bold mt-1 ${analysisResult.pe_info?.suspeita_packer ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {analysisResult.pe_info?.suspeita_packer ? 'Possível Packer (UPX/High Entropy)' : 'Sem Packer'}
+                      </div>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        {analysisResult.pe_info?.is_inno_setup ? 'Instalador InnoSetup' : 'Executável Direto'}
+                      </span>
+                    </div>
+
+                    <div className="bg-black/40 border border-white/5 rounded-lg p-3.5">
+                      <span className="text-[11px] text-neutral-400">Dependências de DLLs</span>
+                      <div className="text-sm font-bold text-cyan-300 mt-1">
+                        {analysisResult.pe_info?.dlls_importadas?.length || 0} DLLs
+                      </div>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        {analysisResult.pe_info?.funcoes_importadas_contagem || 0} funções importadas
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Lista de DLLs Requeridas */}
+                  {analysisResult.pe_info?.dlls_importadas?.length > 0 && (
+                    <div className="bg-black/40 border border-white/5 rounded-lg p-4 space-y-2.5">
+                      <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                        Bibliotecas Requeridas para Execução no Wine:
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {analysisResult.pe_info.dlls_importadas.map((d: any, idx: number) => (
+                          <div key={idx} className="bg-white/5 border border-white/5 rounded p-2.5 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-xs font-bold text-white">{d.dll}</span>
+                              <span className="text-[10px] text-neutral-400">{d.qtd_funcoes} funcs</span>
+                            </div>
+                            <div className="text-[10px] text-neutral-400 font-mono truncate">
+                              {d.amostra_funcoes?.slice(0, 3).join(', ')}...
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Seções PE */}
+                  {analysisResult.pe_info?.secoes?.length > 0 && (
+                    <div className="bg-black/40 border border-white/5 rounded-lg p-4 space-y-2.5">
+                      <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                        Seções do Binário (Portable Executable):
+                      </h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs font-mono">
+                          <thead>
+                            <tr className="border-b border-white/10 text-neutral-500">
+                              <th className="py-2 px-3">Seção</th>
+                              <th className="py-2 px-3">Tamanho Virtual</th>
+                              <th className="py-2 px-3">Tamanho Raw</th>
+                              <th className="py-2 px-3">Entropia</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analysisResult.pe_info.secoes.map((s: any, idx: number) => (
+                              <tr key={idx} className="border-b border-white/5 text-neutral-300">
+                                <td className="py-2 px-3 font-bold text-cyan-300">{s.nome}</td>
+                                <td className="py-2 px-3">{s.tamanho_virtual}</td>
+                                <td className="py-2 px-3">{s.tamanho_raw}</td>
+                                <td className="py-2 px-3">
+                                  <span className={s.entropia > 7.0 ? 'text-amber-400 font-bold' : 'text-neutral-400'}>
+                                    {s.entropia} {s.entropia > 7.0 ? '🔥' : ''}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: Wine Test Results */}
+          {activeTab === 'wine' && (
+            <div className="space-y-4">
+              {!wineResult ? (
+                <div className="text-center py-14 text-neutral-500 space-y-3">
+                  <Play className="w-10 h-10 mx-auto text-neutral-600 opacity-50" />
+                  <p className="text-sm">Nenhum teste no Wine executado ainda.</p>
+                  <p className="text-xs text-neutral-600 max-w-md mx-auto">
+                    Clique em "Testar no Wine" para rodar o executável Windows em ambiente virtual headless (Xvfb) e diagnosticar dependências em tempo real.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Status Bar */}
+                  <div className="bg-black/40 border border-white/5 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${wineResult.sucesso ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                        {wineResult.sucesso ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-white">
+                          Exit Code: {wineResult.exit_code} {wineResult.sucesso ? '(Sucesso)' : '(Erro ou Finalizado)'}
+                        </div>
+                        <span className="text-xs text-neutral-400">
+                          Duração do processo: {wineResult.duracao}s • Log salvo no Google Drive
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => copyLog(wineResult.saida_resumida || '')}
+                      className="px-3 py-1 bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10 rounded text-xs flex items-center gap-1.5 transition-colors"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copied ? 'Copiado!' : 'Copiar Saída'}</span>
+                    </button>
+                  </div>
+
+                  {/* Diagnósticos Inteligentes */}
+                  {wineResult.diagnosticos && wineResult.diagnosticos.length > 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 space-y-2">
+                      <div className="flex items-center gap-2 text-amber-300 font-semibold text-xs">
+                        <ShieldAlert className="w-4 h-4" />
+                        <span>Diagnóstico do Wine Sandbox (Detecção Automática):</span>
+                      </div>
+                      <div className="text-xs text-neutral-200 leading-relaxed space-y-2 whitespace-pre-wrap">
+                        {wineResult.diagnosticos.map((diag: string, i: number) => (
+                          <div key={i} className="p-2.5 bg-black/40 rounded border border-white/5 font-mono text-[11px]">
+                            {diag}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Terminal Log Output */}
+                  <div className="bg-black/60 border border-white/10 rounded-lg p-4 space-y-2">
+                    <span className="text-xs font-mono text-neutral-400 block">Saída do Processo (Stdout / Stderr):</span>
+                    <pre className="p-3 bg-black rounded font-mono text-[11px] text-neutral-300 overflow-x-auto whitespace-pre-wrap max-h-96">
+                      {wineResult.saida_resumida || '[Sem saída de terminal]'}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: Full Markdown Report */}
+          {activeTab === 'report' && (
+            <div className="space-y-3">
+              {analysisResult?.resumo_md ? (
+                <div className="bg-black/60 border border-white/5 rounded-lg p-5">
+                  <div className="flex justify-end mb-3">
+                    <button
+                      onClick={() => copyLog(analysisResult.resumo_md)}
+                      className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10 rounded text-xs flex items-center gap-1.5 transition-colors"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copied ? 'Copiado!' : 'Copiar Markdown'}</span>
+                    </button>
+                  </div>
+                  <pre className="font-mono text-xs text-neutral-200 whitespace-pre-wrap leading-relaxed">
+                    {analysisResult.resumo_md}
+                  </pre>
+                </div>
+              ) : (
+                <div className="text-center py-14 text-neutral-500">
+                  <p className="text-sm">Nenhum relatório gerado ainda. Execute a análise acima.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: Toolchain Status */}
+          {activeTab === 'tools' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Status da Toolchain de Engenharia Reversa</h3>
+                  <p className="text-xs text-neutral-400">Verificação das ferramentas instaladas no Google Colab e no PC.</p>
+                </div>
+                <button
+                  onClick={handleInstallToolchain}
+                  disabled={isInstallingToolchain}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  {isInstallingToolchain ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  <span>{isInstallingToolchain ? 'Instalando...' : 'Executar setup_re.sh'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {[
+                  { name: 'REA (morluto/rea)', key: 'rea_cli', desc: 'Suíte CLI e MCP de engenharia reversa agêntica' },
+                  { name: 'Wine 64-bit', key: 'wine64', desc: 'Camada de compatibilidade para rodar .exe de Windows' },
+                  { name: 'Xvfb (Wine Headless)', key: 'xvfb', desc: 'Display virtual para evitar travamentos de GUI' },
+                  { name: 'innoextract', key: 'innoextract', desc: 'Descompactador de instaladores InnoSetup' },
+                  { name: '7-Zip (p7zip)', key: 'p7zip', desc: 'Descompactador de CABs, DLLs e arquivos compactados' },
+                  { name: 'Ghidra Headless', key: 'ghidra', desc: 'Descompilador de binários e análise estática avançada' },
+                  { name: 'Radare2 (r2)', key: 'r2', desc: 'Framework de disassembly e dissecção de hexadecimais' },
+                  { name: 'Python pefile', key: 'pefile', desc: 'Parsing completo de Portable Executable (PE32/PE64)' },
+                  { name: 'Python Capstone', key: 'capstone', desc: 'Motor de desmontagem de assembly x86/ARM' },
+                ].map((tool, idx) => {
+                  const isOk = toolchainStatus ? toolchainStatus[tool.key] : false;
+                  return (
+                    <div key={idx} className="bg-black/40 border border-white/5 rounded-lg p-3.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-xs text-white">{tool.name}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+                          isOk ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-neutral-800 text-neutral-400'
+                        }`}>
+                          {isOk ? 'Instalado ✓' : 'Pendente'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400">{tool.desc}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {installLog && (
+                <div className="bg-black/60 border border-white/10 rounded-lg p-4 space-y-2">
+                  <span className="text-xs font-mono text-neutral-400">Log da Instalação (setup_re.sh):</span>
+                  <pre className="p-3 bg-black rounded font-mono text-[11px] text-neutral-300 overflow-x-auto whitespace-pre-wrap max-h-60">
+                    {installLog}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default App;
+

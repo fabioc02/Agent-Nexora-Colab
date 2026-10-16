@@ -13,6 +13,8 @@ mkdir -p /content/drive/MyDrive/AgentNexora/memory
 mkdir -p /content/drive/MyDrive/AgentNexora/workspace
 mkdir -p /content/drive/MyDrive/AgentNexora/contexto
 mkdir -p /content/drive/MyDrive/AgentNexora/RE
+mkdir -p /content/drive/MyDrive/AgentNexora/wineprefix
+mkdir -p /content/drive/MyDrive/AgentNexora/WindowsApps
 
 # 2. Instala cloudflared se não estiver presente
 if ! command -v cloudflared &>/dev/null; then

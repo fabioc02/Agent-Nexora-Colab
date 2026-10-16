@@ -9,7 +9,7 @@ Ele conecta sua máquina local (Kali Linux / Ubuntu) via **Tailscale (VPN P2P di
 ## 🛡️ Conexão via Tailscale (Recomendada — Zero Timeouts / Horas Seguidas)
 
 O Tailscale conecta seu **Google Colab** e seu **PC (Kali Linux)** na **MESMA conta** como uma rede local privada WireGuard:
-- **Zero limite de timeout HTTP** (ao contrário dos túneis rápidos que caem após 100 segundos).
+- **Zero limite de timeout HTTP** (ao contrário dos túneis rápidos que caem após 60 ou 100 segundos).
 - **IPs privados fixos** (`100.x.y.z`) que não mudam durante a sessão.
 - **100% Gratuito**: crie sua conta em [tailscale.com](https://tailscale.com) e gere uma Auth Key em *Settings > Keys > Generate auth key*.
 
@@ -21,7 +21,7 @@ Abra o seu Google Colab, configure o ambiente para **GPU L4** (`Ambiente de Exec
 
 ```python
 # ==============================================================================
-# 🚀 NEXORA AGENT — CÉLULA ÚNICA DE INICIALIZAÇÃO NO GOOGLE COLAB (GPU L4 24GB)
+# 🐉 NEXORA AGENT: KALI LINUX + WINE + AUDIO WORKSTATION + REA ENGINE (morluto/rea)
 # ==============================================================================
 import os
 import sys
@@ -30,125 +30,186 @@ import subprocess
 import re
 from google.colab import drive
 
-# [OPCIONAL] Cole sua Auth Key do Tailscale abaixo para conexão direta P2P sem timeout
-# Se deixar vazio "", usará o túnel Cloudflare automaticamente!
-TAILSCALE_AUTHKEY = ""
+# ------------------------------------------------------------------------------
+# 🔑 CONFIGURAÇÃO DO TAILSCALE (ÚNICA LINHA ONDE FICA SUA CHAVE)
+# ------------------------------------------------------------------------------
+TAILSCALE_AUTHKEY = ""  # Cole sua chave aqui se desejar (ex: "tskey-auth-...")
+MODELO_PADRAO = "hermes3:8b"
 
-# 1. Monta o Google Drive para persistência total (memória, histórico, arquivos)
-print("📂 [1/7] Conectando Google Drive para persistência do agente...")
+def run_bash(cmd):
+    """Executa scripts bash de forma segura no Colab sem erro de aspas."""
+    return subprocess.run(cmd, shell=True, executable='/bin/bash')
+
+# ------------------------------------------------------------------------------
+# 1. MONTAGEM DO GOOGLE DRIVE & PASTAS DE PERSISTÊNCIA TOTAL
+# ------------------------------------------------------------------------------
+print("📂 [1/7] Conectando Google Drive para persistência total...")
 drive.mount('/content/drive')
 DRIVE_BASE = "/content/drive/MyDrive/AgentNexora"
-for pasta in ["memory", "workspace", "contexto", "RE", "firmwares", "logs"]:
+pastas_drive = [
+    "memory", "workspace", "contexto", "RE", "firmwares",
+    "logs", "wine_backup", "wineprefix", "WindowsApps", "samples_wav", "ArquivosPC"
+]
+for pasta in pastas_drive:
     os.makedirs(f"{DRIVE_BASE}/{pasta}", exist_ok=True)
 print(f"✓ Pastas de persistência prontas em: {DRIVE_BASE}")
 
-# 2. Diagnóstico da GPU L4
-print("\n⚡ [2/7] Verificando aceleração de GPU...")
-!nvidia-smi
+# ------------------------------------------------------------------------------
+# 2. DIAGNÓSTICO DA GPU NVIDIA L4
+# ------------------------------------------------------------------------------
+print("\n⚡ [2/7] Verificando aceleração de hardware (GPU)...")
+run_bash("nvidia-smi --query-gpu=gpu_name,memory.total,driver_version --format=csv,noheader")
 
-# 3. Clona ou atualiza o código do repositório
-print("\n📦 [3/7] Baixando código-fonte atualizado do Nexora...")
-%cd /content
+# ------------------------------------------------------------------------------
+# 3. ATUALIZAÇÃO / CLONE DO REPOSITÓRIO OFICIAL
+# ------------------------------------------------------------------------------
+print("\n📦 [3/7] Sincronizando repositório oficial do Nexora Agent...")
+os.chdir("/content")
 if os.path.exists("/content/Agent-Nexora-Colab"):
-    %cd /content/Agent-Nexora-Colab
-    !git pull
+    os.chdir("/content/Agent-Nexora-Colab")
+    run_bash("git fetch --all && git reset --hard origin/main")
 else:
-    !git clone https://github.com/fabioc02/Agent-Nexora-Colab.git
-    %cd /content/Agent-Nexora-Colab
+    run_bash("git clone https://github.com/fabioc02/Agent-Nexora-Colab.git")
+    os.chdir("/content/Agent-Nexora-Colab")
 
-# Sincroniza versão atualizada do main.py com Modo Sem Censura & Conversação Livre
-!curl -fsSL https://ais-pre-ylz5pnqyhwnnetgiv7oz7f-652487817170.us-east1.run.app/main.py -o /content/Agent-Nexora-Colab/main.py 2>/dev/null || true
+# ------------------------------------------------------------------------------
+# 4. INSTALAÇÃO DO AMBIENTE WINE, ÁUDIO, XFCE E FERRAMENTAS DE SISTEMA
+# ------------------------------------------------------------------------------
+print("\n🐉 [4/7] Instalando Ambiente Gráfico, Wine Multiarch, Áudio e Utilitários...")
+os.environ["DEBIAN_FRONTEND"] = "noninteractive"
+run_bash("dpkg --add-architecture i386 2>/dev/null || true")
+run_bash("apt-get update -qq")
 
-# 4. Instala dependências do sistema, Cloudflare, Tailscale e requisitos Python
-print("\n🌐 [4/7] Instalando dependências e túneis...")
-!apt-get update -qq && apt-get install -y -qq zstd
-!curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
-!dpkg -i /tmp/cloudflared.deb || apt-get install -f -y > /dev/null 2>&1
-!rm -f /tmp/cloudflared.deb
-!pip install -q -r requirements.txt
-!pip install -q -r requirements-re.txt || true
+run_bash("""
+apt-get install -y --no-install-recommends \
+    xfce4 xfce4-terminal tightvncserver novnc websockify \
+    wine wine64 winetricks xvfb xauth libx11-6 \
+    p7zip-full innoextract icoutils cabextract unrar \
+    binutils file xxd bsdextrautils bsdmainutils ent zstd \
+    build-essential cmake python3-pip python3-dev \
+    openjdk-17-jdk-headless alsa-utils libasound2-plugins jackd2 > /dev/null 2>&1
+""")
 
-# Configura Tailscale se a chave foi informada
-ts_ip = ""
+# Cria o wrapper wine-headless para evitar travamentos de display
+with open('/usr/local/bin/wine-headless', 'w') as f:
+    f.write("""#!/usr/bin/env bash
+if [ -z "$DISPLAY" ]; then
+    exec xvfb-run -a wine "$@"
+else
+    exec wine "$@"
+fi
+""")
+run_bash("chmod +x /usr/local/bin/wine-headless")
+
+# ------------------------------------------------------------------------------
+# 5. INSTALAÇÃO DA TOOLCHAIN REA (morluto/rea) & LIBS DE DISSECÇÃO PYTHON
+# ------------------------------------------------------------------------------
+print("\n🔬 [5/7] Configurando Toolchain REA (morluto/rea), Ghidra e Decompiladores...")
+
+run_bash("pip install -q --upgrade pip")
+run_bash("""
+pip install -q \
+    fastapi uvicorn pydantic requests pysocks pyngrok \
+    pefile capstone lief construct kaitaistruct \
+    pyelftools r2pipe frida-tools mido pretty_midi python-rtmidi 2>/dev/null
+""")
+
+# Instala Node.js 22 e REA CLI de forma limpa
+run_bash("""
+if ! command -v node &>/dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1
+    apt-get install -y -qq nodejs >/dev/null 2>&1
+fi
+if command -v npm &>/dev/null; then
+    npm install --global rea-agents >/dev/null 2>&1 || true
+fi
+if [ ! -d /opt/rea ]; then
+    git clone -q --depth 1 https://github.com/morluto/rea.git /opt/rea 2>/dev/null || true
+    [ -f /opt/rea/bin/rea ] && ln -sf /opt/rea/bin/rea /usr/local/bin/rea 2>/dev/null || true
+fi
+""")
+
+if os.path.exists("setup_re.sh"):
+    run_bash("bash setup_re.sh > /dev/null 2>&1 || true")
+
+# ------------------------------------------------------------------------------
+# 6. INSTALAÇÃO & INICIALIZAÇÃO DO OLLAMA COM ACELERAÇÃO CUDA NA GPU L4
+# ------------------------------------------------------------------------------
+print("\n🧠 [6/7] Inicializando Ollama (GPU L4) e baixando modelos...")
+run_bash("""
+if ! command -v ollama &>/dev/null; then
+    curl -fsSL https://ollama.com/download/ollama-linux-amd64.tar.zst | zstd -d | tar -xf - -C /usr/local
+    chmod +x /usr/local/bin/ollama
+fi
+""")
+
+run_bash("pkill -f 'ollama serve' || true")
+subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+for _ in range(15):
+    if subprocess.getoutput("curl -s http://localhost:11434/api/version"):
+        break
+    time.sleep(1)
+
+run_bash(f"ollama pull {MODELO_PADRAO}")
+
+# ------------------------------------------------------------------------------
+# 7. REDE & SERVIDORES ANTI-TIMEOUT: TAILSCALE (WIREGUARD) + CLOUDFLARE + NEXORA API
+# ------------------------------------------------------------------------------
+print("\n🛡️ [7/7] Subindo servidores sem timeout e túnel HTTPS...")
+
+# 7.1. Tailscale P2P WireGuard (Zero Timeouts entre Colab e Kali Linux)
 if TAILSCALE_AUTHKEY.strip():
-    print("\n🛡️ Configurando Tailscale P2P WireGuard...")
-    !curl -fsSL https://tailscale.com/install.sh | sh > /dev/null 2>&1 || true
-    !mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true && chmod 600 /dev/net/tun 2>/dev/null || true
-    !pkill -f "tailscaled" || true
-    subprocess.Popen("tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1055 > /tmp/tailscaled.log 2>&1", shell=True)
-    time.sleep(2)
-    !tailscale up --authkey="{TAILSCALE_AUTHKEY.strip()}" --hostname="nexora-colab" --accept-routes
-    time.sleep(1)
-    # Habilita roteamento direto de entrada P2P (Sem Cloudflare / Sem Timeout)
-    !tailscale serve --bg 5000 2>/dev/null || !tailscale serve --bg http://localhost:5000 2>/dev/null || true
-    ts_ip = subprocess.getoutput("tailscale ip -4 2>/dev/null").strip()
-
-# 5. Instala e inicia o Ollama oficial com aceleração CUDA na GPU
-print("\n🧠 [5/7] Configurando Ollama com aceleração CUDA...")
-if not os.path.exists("/usr/local/bin/ollama"):
-    print("-> Baixando binários do Ollama com suporte CUDA...")
-    !curl -fsSL https://ollama.com/download/ollama-linux-amd64.tar.zst | zstd -d | tar -xf - -C /usr/local
-    !chmod +x /usr/local/bin/ollama 2>/dev/null || true
-
-!pkill -f "ollama serve" || true
-
-import shutil
-ollama_bin = "/usr/local/bin/ollama" if os.path.exists("/usr/local/bin/ollama") else (shutil.which("ollama") or "ollama")
-ollama_proc = subprocess.Popen([ollama_bin, "serve"])
-
-print("-> Aguardando daemon do Ollama responder na porta 11434...")
-for _ in range(30):
-    try:
-        import urllib.request
-        with urllib.request.urlopen("http://localhost:11434/api/version", timeout=2) as r:
-            if r.status == 200:
-                print("✓ Ollama daemon ativo e acelerado por GPU!")
-                break
-    except Exception:
-        time.sleep(1)
-
-# 6. Baixa os modelos gratuitos na GPU L4: Hermes 3 e Qwen 2.5
-print("\n🤖 [6/7] Baixando modelos gratuitos na GPU L4 (24GB VRAM)...")
-print("-> Baixando Hermes 3 (8B) [Tool-Calling & Scratchpad]...")
-!ollama pull hermes3:8b
-print("-> Baixando Qwen 2.5 (7B) [Raciocínio & Código]...")
-!ollama pull qwen2.5:7b
-
-# 7. Inicia Túnel Cloudflare e Servidor Nexora Agent
-print("\n🚀 [7/7] Iniciando conexões e Servidor API...")
-!pkill -f "cloudflared" || true
-with open("/tmp/cloudflared.log", "w") as log_f:
-    cf_proc = subprocess.Popen(
-        ["cloudflared", "tunnel", "--url", "http://localhost:5000"],
-        stdout=log_f,
-        stderr=subprocess.STDOUT
+    print("-> Inicializando Tailscale WireGuard P2P...")
+    run_bash("curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true")
+    run_bash("mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true && chmod 600 /dev/net/tun 2>/dev/null || true")
+    run_bash("pkill -f 'tailscaled' || true")
+    subprocess.Popen(
+        "tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 > /tmp/tailscaled.log 2>&1",
+        shell=True
     )
-
-cf_url = ""
-for _ in range(25):
+    time.sleep(2)
+    run_bash(f'tailscale up --authkey="{TAILSCALE_AUTHKEY.strip()}" --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true')
     time.sleep(1)
+    run_bash("tailscale serve --bg --yes 5000 > /tmp/ts_serve.log 2>&1 || true")
+
+# 7.2. Cloudflare Tunnel (Conexão Web via Navegador)
+run_bash("""
+if ! command -v cloudflared &>/dev/null; then
+    curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
+    dpkg -i /tmp/cloudflared.deb || apt-get install -f -y > /dev/null 2>&1
+    rm -f /tmp/cloudflared.deb
+fi
+""")
+run_bash("pkill -f 'cloudflared tunnel' || true")
+subprocess.Popen("cloudflared tunnel --url http://localhost:5000 > /tmp/cloudflared.log 2>&1", shell=True)
+
+# Aguarda URL do Cloudflare
+cf_url = ""
+for _ in range(15):
     if os.path.exists("/tmp/cloudflared.log"):
-        with open("/tmp/cloudflared.log", "r") as log_f:
-            conteudo = log_f.read()
-            m = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', conteudo)
-            if m:
-                cf_url = m.group(0)
-                break
+        txt = open("/tmp/cloudflared.log").read()
+        m = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', txt)
+        if m:
+            cf_url = m.group(0)
+            break
+    time.sleep(1)
 
-print("\n" + "="*70)
-print("✨ NEXORA AGENT PRONTO! (HERMES 3 & QWEN 2.5 NA GPU L4)")
-print("="*70)
-if ts_ip:
-    print(f"\n🛡️ TAILSCALE P2P DIRETO (ZERO TIMEOUTS / CONEXÃO DIRETA WIREGUARD):")
-    print(f"👉 http://{ts_ip}:5000 (ou via Ponte: http://localhost:8000/colab) 👈")
-    print("💡 Use este endereço no seu PC Kali para nunca mais ter timeout de 100 segundos!")
+ts_ip = subprocess.getoutput("tailscale ip -4 2>/dev/null").strip()
+
+print("\n" + "="*75)
+print("🚀 NEXORA AGENT + REA & WINE SANDBOX ONLINE!")
+print("="*75)
 if cf_url:
-    print(f"\n☁️ TÚNEL CLOUDFLARE (ACESSO WEB REMOTO / CELULAR):")
-    print(f"👉 {cf_url} 👈\n")
-print("="*70)
+    print(f"🌐 INTERFACE WEB (HTTPS): {cf_url}")
+    print("   👉 Cole o link acima no campo 'Servidor 1: Google Colab' da Web UI.")
+if ts_ip and "." in ts_ip:
+    print(f"🛡️ IP TAILSCALE DO COLAB (SEM TIMEOUT): http://{ts_ip}:5000")
+    print("   👉 Conexão P2P WireGuard direta com seu Kali Linux sem nenhuma queda!")
+print("="*75 + "\n")
 
-ts_arg = f"--tailscale_authkey \"{TAILSCALE_AUTHKEY.strip()}\"" if TAILSCALE_AUTHKEY.strip() else ""
-!python3 main.py --api --port 5000 --modelo hermes3:8b --sem_censura --memoria_dir "/content/drive/MyDrive/AgentNexora/memory" $ts_arg
+# Inicia o Servidor FastAPI do Nexora na porta 5000
+run_bash(f'python3 main.py --api --port 5000 --modelo "{MODELO_PADRAO}" --memoria_dir "/content/drive/MyDrive/AgentNexora/memory"')
 ```
 
 ---
@@ -197,6 +258,3 @@ O Nexora Agent agora integra nativamente a suíte **REA** ([github.com/morluto/r
 5. **Persistência no Google Drive**:
    - Todos os relatórios de triagem, arquivos originais, logs do Wine e códigos reconstruídos são salvos em:  
      `/content/drive/MyDrive/AgentNexora/RE/<nome_alvo>/`
-
-
-

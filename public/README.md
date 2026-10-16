@@ -106,6 +106,11 @@ run_bash("chmod +x /usr/local/bin/wine-headless")
 # ------------------------------------------------------------------------------
 print("\n🖥️ [4.1/7] Subindo Ambiente Gráfico Desktop (XFCE + VNC + NoVNC)...")
 run_bash("""
+# Limpeza completa de travas anteriores do X11 e VNC
+vncserver -kill :1 2>/dev/null || true
+pkill -9 -f "Xtightvnc|Xvnc|websockify" 2>/dev/null || true
+rm -rf /tmp/.X11-unix/X1 /tmp/.X1-lock /tmp/.X5901-lock 2>/dev/null || true
+
 mkdir -p ~/.vnc
 echo "nexora123" | vncpasswd -f > ~/.vnc/passwd
 chmod 600 ~/.vnc/passwd
@@ -119,17 +124,15 @@ startxfce4 &
 EOF
 chmod +x ~/.vnc/xstartup
 
-vncserver -kill :1 2>/dev/null || true
-pkill -f "Xtightvnc|Xvnc" 2>/dev/null || true
 vncserver :1 -geometry 1366x768 -depth 24
 
-pkill -f "websockify" || true
-websockify -D --web=/usr/share/novnc/ 6080 localhost:5901
-""")
+# Link simbólico para garantir que a página web padrão abra direto
+ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
 
-# Túnel Cloudflare para o NoVNC (Porta 6080)
-run_bash("pkill -f 'cloudflared.*6080' || true")
-subprocess.Popen("cloudflared tunnel --url http://localhost:6080 > /tmp/cloudflared_vnc.log 2>&1", shell=True)
+# Sobe o proxy Websocket para VNC na porta 6080
+pkill -f "websockify" 2>/dev/null || true
+websockify -D --web=/usr/share/novnc/ 6080 localhost:5901 > /tmp/websockify.log 2>&1
+""")
 
 # ------------------------------------------------------------------------------
 # 5. INSTALAÇÃO DA TOOLCHAIN REA (morluto/rea) & LIBS DE DISSECÇÃO PYTHON
@@ -190,7 +193,7 @@ run_bash("ollama pull qwen2.5:7b")
 # ------------------------------------------------------------------------------
 print("\n🛡️ [7/7] Subindo servidores sem timeout e túnel HTTPS...")
 
-# 7.1. Cloudflare Tunnel (Conexão Web via Navegador imediata)
+# 7.1. Túneis Cloudflare (API na porta 5000 e Desktop NoVNC na porta 6080)
 run_bash("""
 if ! command -v cloudflared &>/dev/null; then
     curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
@@ -198,8 +201,15 @@ if ! command -v cloudflared &>/dev/null; then
     rm -f /tmp/cloudflared.deb
 fi
 """)
-run_bash("pkill -f 'cloudflared tunnel' || true")
+# Encerra túneis anteriores de forma limpa antes de subir os dois túneis simultâneos
+run_bash("pkill -f 'cloudflared' || true")
+time.sleep(1)
+
+# Inicia o túnel da API (porta 5000)
 subprocess.Popen("cloudflared tunnel --url http://localhost:5000 > /tmp/cloudflared.log 2>&1", shell=True)
+
+# Inicia o túnel do Desktop NoVNC (porta 6080)
+subprocess.Popen("cloudflared tunnel --url http://localhost:6080 > /tmp/cloudflared_vnc.log 2>&1", shell=True)
 
 # 7.2. Tailscale P2P WireGuard (Zero Timeouts com Kali Linux)
 ts_auth = TAILSCALE_AUTHKEY.strip()

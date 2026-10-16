@@ -34,7 +34,7 @@ from google.colab import drive
 # 🔑 CONFIGURAÇÃO DO TAILSCALE (ÚNICA LINHA ONDE FICA SUA CHAVE)
 # ------------------------------------------------------------------------------
 TAILSCALE_AUTHKEY = ""  # Cole sua chave aqui se desejar (ex: "tskey-auth-...")
-MODELO_PADRAO = "hermes3:8b"
+MODELO_PADRAO = "dual:hermes3+qwen2.5"
 
 def run_bash(cmd):
     """Executa scripts bash de forma segura no Colab sem erro de aspas."""
@@ -102,6 +102,36 @@ fi
 run_bash("chmod +x /usr/local/bin/wine-headless")
 
 # ------------------------------------------------------------------------------
+# 4.1. INICIALIZAÇÃO DO AMBIENTE GRÁFICO XFCE + VNC + NoVNC (ACESSO WEB)
+# ------------------------------------------------------------------------------
+print("\n🖥️ [4.1/7] Subindo Ambiente Gráfico Desktop (XFCE + VNC + NoVNC)...")
+run_bash("""
+mkdir -p ~/.vnc
+echo "nexora123" | vncpasswd -f > ~/.vnc/passwd
+chmod 600 ~/.vnc/passwd
+
+cat << 'EOF' > ~/.vnc/xstartup
+#!/bin/bash
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+xrdb $HOME/.Xresources 2>/dev/null || true
+startxfce4 &
+EOF
+chmod +x ~/.vnc/xstartup
+
+vncserver -kill :1 2>/dev/null || true
+pkill -f "Xtightvnc|Xvnc" 2>/dev/null || true
+vncserver :1 -geometry 1366x768 -depth 24
+
+pkill -f "websockify" || true
+websockify -D --web=/usr/share/novnc/ 6080 localhost:5901
+""")
+
+# Túnel Cloudflare para o NoVNC (Porta 6080)
+run_bash("pkill -f 'cloudflared.*6080' || true")
+subprocess.Popen("cloudflared tunnel --url http://localhost:6080 > /tmp/cloudflared_vnc.log 2>&1", shell=True)
+
+# ------------------------------------------------------------------------------
 # 5. INSTALAÇÃO DA TOOLCHAIN REA (morluto/rea) & LIBS DE DISSECÇÃO PYTHON
 # ------------------------------------------------------------------------------
 print("\n🔬 [5/7] Configurando Toolchain REA (morluto/rea), Ghidra e Decompiladores...")
@@ -151,29 +181,16 @@ for _ in range(15):
         break
     time.sleep(1)
 
-run_bash(f"ollama pull {MODELO_PADRAO}")
+print("-> Carregando modelos Hermes 3 e Qwen 2.5 para Dual Engine (24GB VRAM)...")
+run_bash("ollama pull hermes3:8b")
+run_bash("ollama pull qwen2.5:7b")
 
 # ------------------------------------------------------------------------------
-# 7. REDE & SERVIDORES ANTI-TIMEOUT: TAILSCALE (WIREGUARD) + CLOUDFLARE + NEXORA API
+# 7. REDE & SERVIDORES ANTI-TIMEOUT: CLOUDFLARE + TAILSCALE (WIREGUARD) + NEXORA API
 # ------------------------------------------------------------------------------
 print("\n🛡️ [7/7] Subindo servidores sem timeout e túnel HTTPS...")
 
-# 7.1. Tailscale P2P WireGuard (Zero Timeouts entre Colab e Kali Linux)
-if TAILSCALE_AUTHKEY.strip():
-    print("-> Inicializando Tailscale WireGuard P2P...")
-    run_bash("curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true")
-    run_bash("mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true && chmod 600 /dev/net/tun 2>/dev/null || true")
-    run_bash("pkill -f 'tailscaled' || true")
-    subprocess.Popen(
-        "tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 > /tmp/tailscaled.log 2>&1",
-        shell=True
-    )
-    time.sleep(2)
-    run_bash(f'tailscale up --authkey="{TAILSCALE_AUTHKEY.strip()}" --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true')
-    time.sleep(1)
-    run_bash("tailscale serve --bg --yes 5000 > /tmp/ts_serve.log 2>&1 || true")
-
-# 7.2. Cloudflare Tunnel (Conexão Web via Navegador)
+# 7.1. Cloudflare Tunnel (Conexão Web via Navegador imediata)
 run_bash("""
 if ! command -v cloudflared &>/dev/null; then
     curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
@@ -184,26 +201,53 @@ fi
 run_bash("pkill -f 'cloudflared tunnel' || true")
 subprocess.Popen("cloudflared tunnel --url http://localhost:5000 > /tmp/cloudflared.log 2>&1", shell=True)
 
-# Aguarda URL do Cloudflare
+# 7.2. Tailscale P2P WireGuard (Zero Timeouts com Kali Linux)
+ts_auth = TAILSCALE_AUTHKEY.strip()
+if ts_auth:
+    print("-> Inicializando Tailscale WireGuard P2P (modo rápido)...")
+    run_bash("if ! command -v tailscale &>/dev/null; then curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true; fi")
+    run_bash("mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true && chmod 600 /dev/net/tun 2>/dev/null || true")
+    run_bash("pkill -f 'tailscaled' || true")
+    subprocess.Popen(
+        "tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 > /tmp/tailscaled.log 2>&1",
+        shell=True
+    )
+    time.sleep(2)
+    # Autentica com timeout estrito de 10s para NUNCA travar se a chave for single-use ou expirar
+    run_bash(f'timeout 12 tailscale up --authkey="{ts_auth}" --reset --timeout=10s --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true')
+    run_bash("(timeout 3 tailscale serve --bg --yes 5000 > /tmp/ts_serve.log 2>&1 || true) &")
+
+# Aguarda URLs dos Túneis Cloudflare (API Web + Desktop NoVNC)
 cf_url = ""
+vnc_cf_url = ""
 for _ in range(15):
-    if os.path.exists("/tmp/cloudflared.log"):
+    if not cf_url and os.path.exists("/tmp/cloudflared.log"):
         txt = open("/tmp/cloudflared.log").read()
         m = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', txt)
-        if m:
-            cf_url = m.group(0)
-            break
+        if m: cf_url = m.group(0)
+    if not vnc_cf_url and os.path.exists("/tmp/cloudflared_vnc.log"):
+        txt_v = open("/tmp/cloudflared_vnc.log").read()
+        m_v = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', txt_v)
+        if m_v: vnc_cf_url = f"{m_v.group(0)}/vnc.html?autoconnect=true"
+    if cf_url and vnc_cf_url:
+        break
     time.sleep(1)
 
 ts_ip = subprocess.getoutput("tailscale ip -4 2>/dev/null").strip()
 
 print("\n" + "="*75)
-print("🚀 NEXORA AGENT + REA & WINE SANDBOX ONLINE!")
+print("🚀 NEXORA AGENT + REA & WINE SANDBOX + DESKTOP VNC ONLINE!")
 print("="*75)
 if cf_url:
     print(f"🌐 INTERFACE WEB (HTTPS): {cf_url}")
     print("   👉 Cole o link acima no campo 'Servidor 1: Google Colab' da Web UI.")
-if ts_ip and "." in ts_ip:
+if vnc_cf_url:
+    print(f"🖥️ DESKTOP GRÁFICO (NoVNC Web): {vnc_cf_url}")
+    print("   👉 Abra o link acima no navegador para acessar o desktop XFCE / Kali completo!")
+elif ts_ip and "." in ts_ip:
+    print(f"🖥️ DESKTOP GRÁFICO (Tailscale Web): http://{ts_ip}:6080/vnc.html?autoconnect=true")
+    print(f"   👉 Cliente VNC (TigerVNC): {ts_ip}:5901 (Senha: nexora123)")
+if ts_ip and "." in ts_ip and not "failed" in ts_ip.lower():
     print(f"🛡️ IP TAILSCALE DO COLAB (SEM TIMEOUT): http://{ts_ip}:5000")
     print("   👉 Conexão P2P WireGuard direta com seu Kali Linux sem nenhuma queda!")
 print("="*75 + "\n")

@@ -82,7 +82,7 @@ if [ -n "$TAILSCALE_KEY" ]; then
     sleep 2
     
     echo "-> Autenticando com Auth Key no Tailscale..."
-    tailscale up --authkey="$TAILSCALE_KEY" --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true
+    timeout 12 tailscale up --authkey="$TAILSCALE_KEY" --reset --timeout=10s --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true
     sleep 1
     echo "-> Ativando Tailscale Serve na porta 5000 (P2P Direto sem timeout)..."
     (timeout 3 tailscale serve --bg --yes 5000 > /tmp/ts_serve.log 2>&1 || timeout 3 tailscale serve --bg --yes http://localhost:5000 > /tmp/ts_serve.log 2>&1 || true) &
@@ -94,10 +94,39 @@ echo "🌐 [6/7] Iniciando túnel Cloudflare na porta 5000..."
 pkill -f "cloudflared tunnel" || true
 cloudflared tunnel --url http://localhost:5000 > /tmp/cloudflared.log 2>&1 &
 
-# Aguarda a URL ser gerada
+# 7.1 Se VNC estiver instalado, sobe XFCE + NoVNC na porta 6080
+VNC_URL=""
+if command -v vncserver &>/dev/null; then
+    echo "🖥️ Subindo Área de Trabalho Gráfica (XFCE + NoVNC)..."
+    mkdir -p ~/.vnc
+    echo "nexora123" | vncpasswd -f > ~/.vnc/passwd 2>/dev/null || true
+    chmod 600 ~/.vnc/passwd 2>/dev/null || true
+    cat << 'EOF' > ~/.vnc/xstartup
+#!/bin/bash
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+xrdb $HOME/.Xresources 2>/dev/null || true
+startxfce4 &
+EOF
+    chmod +x ~/.vnc/xstartup 2>/dev/null || true
+    vncserver -kill :1 2>/dev/null || true
+    vncserver :1 -geometry 1366x768 -depth 24 2>/dev/null || true
+    pkill -f "websockify" || true
+    websockify -D --web=/usr/share/novnc/ 6080 localhost:5901 2>/dev/null || true
+    pkill -f "cloudflared.*6080" || true
+    cloudflared tunnel --url http://localhost:6080 > /tmp/cloudflared_vnc.log 2>&1 &
+fi
+
+# Aguarda as URLs serem geradas
 CLOUDFLARE_URL=""
 for i in {1..15}; do
-    CLOUDFLARE_URL=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || echo "")
+    if [ -z "$CLOUDFLARE_URL" ]; then
+        CLOUDFLARE_URL=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || echo "")
+    fi
+    if [ -z "$VNC_URL" ] && [ -f /tmp/cloudflared_vnc.log ]; then
+        v_url=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' /tmp/cloudflared_vnc.log | head -n 1 || echo "")
+        if [ -n "$v_url" ]; then VNC_URL="${v_url}/vnc.html?autoconnect=true"; fi
+    fi
     if [ -n "$CLOUDFLARE_URL" ]; then
         break
     fi
@@ -110,6 +139,11 @@ echo "✨ NEXORA AGENT PRONTO! (HERMES 3 & QWEN 2.5 NA GPU L4)"
 echo "=========================================================================="
 echo "🌐 URL DA INTERFACE WEB (COLE NO CAMPO 'SERVIDOR 1: COLAB'):"
 echo "👉 $CLOUDFLARE_URL 👈"
+if [ -n "$VNC_URL" ]; then
+    echo "--------------------------------------------------------------------------"
+    echo "🖥️ ÁREA DE TRABALHO GRÁFICA (XFCE / VNC NO NAVEGADOR):"
+    echo "👉 $VNC_URL 👈 (Senha: nexora123)"
+fi
 echo "--------------------------------------------------------------------------"
 if [ -n "$TAILSCALE_IP" ]; then
     echo "🛡️ TAILSCALE DO COLAB ATIVO: $TAILSCALE_IP"

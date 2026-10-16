@@ -209,7 +209,70 @@ def dissecar_pe_windows(caminho_binario):
     return info
 
 
-def analisar_com_rea(caminho_alvo, output_dir=None):
+def sintetizar_com_qwen(dados_analise: dict, modelo: str = "qwen2.5:7b") -> str:
+    """
+    Utiliza o modelo Qwen 2.5 (ou o modelo analista configurado no Ollama)
+    para produzir uma síntese técnica detalhada da arquitetura do binário
+    e recomendações de engenharia reversa.
+    """
+    alvo = dados_analise.get("alvo", "Desconhecido")
+    pe = dados_analise.get("pe_info", {})
+    dlls = [d.get("dll", "") for d in pe.get("dlls_importadas", [])]
+    secoes = [s.get("nome", "") for s in pe.get("secoes", [])]
+    strings_amostra = [s.strip() for s in dados_analise.get("strings_amostra", []) if s.strip()][:25]
+    diag_wine = dados_analise.get("wine_diagnosticos", [])
+    
+    prompt_qwen = f"""Você é o especialista de engenharia reversa (Qwen 2.5) do Nexora Agent.
+Analise os seguintes metadados extraídos de um executável pelo módulo REA (morluto/rea):
+
+- Alvo: {alvo}
+- Arquitetura: {pe.get('arch', 'N/A')} ({pe.get('bits', 'N/A')}-bit)
+- Subsystem: {pe.get('subsystem', 'N/A')}
+- Entry Point: {pe.get('entry_point', 'N/A')}
+- Seções: {', '.join(secoes) if secoes else 'N/A'}
+- Suspeita de Packer: {pe.get('suspeita_packer', False)}
+- Total de Funções Importadas: {pe.get('funcoes_importadas_contagem', 0)}
+- Amostra de DLLs Importadas: {', '.join(dlls[:12]) if dlls else 'N/A'}
+- Diagnóstico do Wine: {'; '.join(diag_wine) if diag_wine else 'Execução estável ou sem erros graves'}
+- Amostra de Strings Relevantes:
+{chr(10).join(strings_amostra[:15])}
+
+Forneça uma síntese técnica concisa, objetiva e profissional em português do Brasil:
+1. Finalidade do software inferida a partir de APIs e DLLs (GUI, áudio/MIDI, drivers, runtime).
+2. Compilador/Linguagem provável (ex: MSVC, VB6, Delphi, GCC MinGW, C++).
+3. Avaliação de integridade estrutural e proteções.
+4. Recomendações para execução estável no Wine ou porte para Linux/Python.
+"""
+    try:
+        url = "http://localhost:11434/api/chat"
+        payload = {
+            "model": modelo,
+            "messages": [
+                {"role": "system", "content": "Você é um engenheiro de software sênior e especialista em engenharia reversa e análise de executáveis. Seja direto, técnico e preciso."},
+                {"role": "user", "content": prompt_qwen}
+            ],
+            "stream": False,
+            "options": {"temperature": 0.1, "num_predict": 768}
+        }
+        
+        # Tenta requests ou urllib
+        try:
+            import requests
+            r = requests.post(url, json=payload, timeout=60)
+            if r.status_code == 200:
+                return r.json().get('message', {}).get('content', '')
+        except Exception:
+            import urllib.request
+            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                return data.get('message', {}).get('content', '')
+    except Exception as e:
+        return f"*(Síntese automática do modelo Qwen: Ollama offline ou modelo não carregado: {e})*"
+    return ""
+
+
+def analisar_com_rea(caminho_alvo, output_dir=None, modelo_ia="qwen2.5:7b"):
     """
     Executa a suíte REA (morluto/rea) e decompilação/triagem completa,
     salvando relatórios e evidências no Google Drive.
@@ -233,22 +296,79 @@ def analisar_com_rea(caminho_alvo, output_dir=None):
     os.makedirs(dir_tools, exist_ok=True)
     os.makedirs(dir_wine_logs, exist_ok=True)
 
-    # Cópia segura para o diretório original
-    caminho_copia = os.path.join(dir_orig, nome_arquivo)
-    if not os.path.exists(caminho_copia):
-        subprocess.run(["cp", "-f", caminho_alvo, caminho_copia])
+    is_diretorio = os.path.isdir(caminho_alvo)
+    dir_extraidos = os.path.join(output_dir, "extraidos")
+    os.makedirs(dir_extraidos, exist_ok=True)
+    arquivos_extraidos = []
 
-    # 1. Metadados e Hashes
+    if is_diretorio:
+        # Se for um diretório de instalação (ex: One Man Band 10 + serial)
+        arquivos_dir = sorted(os.listdir(caminho_alvo))
+        caminho_copia = None
+        
+        # Procura arquivos comprimidos da Microsoft (*.ex_, *.dl_, *.in_) ou .exe
+        for arq in arquivos_dir:
+            full_p = os.path.join(caminho_alvo, arq)
+            if not os.path.isfile(full_p): continue
+            
+            # Se for executável compactado da Microsoft (como omb.ex_ ou setup1.ex_)
+            if arq.lower().endswith(('.ex_', '.dl_', '.oc_', '.in_')):
+                cmd_7z = f"7z x -y '{full_p}' -o'{dir_extraidos}' 2>/dev/null"
+                subprocess.run(cmd_7z, shell=True)
+            elif arq.lower().endswith('.exe'):
+                subprocess.run(["cp", "-f", full_p, os.path.join(dir_orig, arq)])
+
+        # Lista os arquivos descompactados
+        if os.path.exists(dir_extraidos):
+            arquivos_extraidos = sorted(os.listdir(dir_extraidos))
+
+        # Escolhe o executável principal para dissecção profunda (ex: omb.exe > setup.exe > setup1.exe)
+        candidatos_exe = [
+            os.path.join(dir_extraidos, "omb.exe"),
+            os.path.join(dir_extraidos, "OMB.EXE"),
+            os.path.join(caminho_alvo, "SETUP.EXE"),
+            os.path.join(caminho_alvo, "setup.exe"),
+            os.path.join(dir_extraidos, "setup1.exe")
+        ]
+        for c in candidatos_exe:
+            if os.path.exists(c):
+                caminho_copia = c
+                break
+        
+        if not caminho_copia and arquivos_extraidos:
+            for ae in arquivos_extraidos:
+                if ae.lower().endswith('.exe'):
+                    caminho_copia = os.path.join(dir_extraidos, ae)
+                    break
+        
+        if not caminho_copia:
+            caminho_copia = os.path.join(caminho_alvo, arquivos_dir[0])
+    else:
+        # Cópia segura para o diretório original
+        caminho_copia = os.path.join(dir_orig, nome_arquivo)
+        if not os.path.exists(caminho_copia):
+            subprocess.run(["cp", "-f", caminho_alvo, caminho_copia])
+
+        # Se for um arquivo compactado isolado (ex: omb.ex_)
+        if caminho_alvo.lower().endswith('.ex_'):
+            cmd_7z = f"7z x -y '{caminho_copia}' -o'{dir_extraidos}' 2>/dev/null"
+            subprocess.run(cmd_7z, shell=True)
+            for f_ex in os.listdir(dir_extraidos):
+                if f_ex.lower().endswith('.exe'):
+                    caminho_copia = os.path.join(dir_extraidos, f_ex)
+                    break
+
+    # 1. Metadados e Hashes do Binário Principal
     t_file = subprocess.getoutput(f"file '{caminho_copia}'")
-    t_md5 = subprocess.getoutput(f"md5sum '{caminho_copia}'").split()[0]
-    t_sha256 = subprocess.getoutput(f"sha256sum '{caminho_copia}'").split()[0]
-    t_tamanho = os.path.getsize(caminho_copia)
+    t_md5 = subprocess.getoutput(f"md5sum '{caminho_copia}' 2>/dev/null").split()[0] if os.path.isfile(caminho_copia) else ""
+    t_sha256 = subprocess.getoutput(f"sha256sum '{caminho_copia}' 2>/dev/null").split()[0] if os.path.isfile(caminho_copia) else ""
+    t_tamanho = os.path.getsize(caminho_copia) if os.path.isfile(caminho_copia) else 0
 
     # 2. Análise PE se for Windows
     pe_info = dissecar_pe_windows(caminho_copia)
 
-    # 3. Strings relevantes (URLs, DLLs, caminhos, nomes de funções)
-    out_strings = subprocess.getoutput(f"strings -n 6 '{caminho_copia}' | head -500")
+    # 3. Strings relevantes (URLs, DLLs, caminhos, nomes de funções, Yamaha/CASM)
+    out_strings = subprocess.getoutput(f"strings -n 5 '{caminho_copia}' | head -800")
     with open(os.path.join(dir_analise, "strings.txt"), "w", encoding="utf-8") as f_s:
         f_s.write(out_strings)
 
@@ -286,13 +406,33 @@ def analisar_com_rea(caminho_alvo, output_dir=None):
             except Exception:
                 pass
 
-    # 6. Gera Relatório Completo em Markdown no Google Drive
+    # 6. Teste Dinâmico no Wine Sandbox (Headless Xvfb) se for executável Windows
+    wine_diag = []
+    res_wine_teste = None
+    if pe_info.get("is_pe") or (caminho_copia and caminho_copia.lower().endswith(".exe")):
+        try:
+            res_wine_teste = executar_teste_wine(caminho_copia, timeout_segundos=15)
+            wine_diag = res_wine_teste.get("diagnosticos", [])
+        except Exception:
+            pass
+
+    # 7. Síntese Técnica com IA Especialista (Qwen 2.5)
+    dados_sintese = {
+        "alvo": nome_arquivo,
+        "pe_info": pe_info,
+        "strings_amostra": out_strings.split("\n")[:30],
+        "wine_diagnosticos": wine_diag
+    }
+    analise_qwen = sintetizar_com_qwen(dados_sintese, modelo=modelo_ia)
+
+    # 8. Gera Relatório Completo em Markdown no Google Drive
     caminho_relatorio = os.path.join(dir_analise, "relatorio_rea.md")
     linhas_relatorio = [
-        f"# 🔬 Relatório de Engenharia Reversa (REA + Nexora)",
+        f"# 🔬 Relatório de Engenharia Reversa (REA + Nexora Dual Engine)",
         f"**Alvo:** `{nome_arquivo}`  ",
         f"**Data da Análise:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}  ",
         f"**Caminho no Drive:** `{output_dir}`  ",
+        f"**Modelo Especialista Revisor:** `{modelo_ia}`  ",
         "",
         "## 1. Identificação e Hashes Criptográficos",
         f"- **Tamanho:** {t_tamanho:,} bytes ({round(t_tamanho / (1024*1024), 2)} MB)",
@@ -340,14 +480,37 @@ def analisar_com_rea(caminho_alvo, output_dir=None):
         if len(inno_arquivos) > 25:
             linhas_relatorio.append(f"- ... e mais {len(inno_arquivos) - 25} arquivos.")
 
+    if res_wine_teste:
+        status_wine_txt = 'Sucesso (Exit Code 0)' if res_wine_teste.get('sucesso') else f"Código de saída {res_wine_teste.get('exit_code')}"
+        linhas_relatorio.extend([
+            "",
+            "## 4. Teste em Sandbox Wine (Diagnóstico Dinâmico)",
+            f"- **Status de Execução:** {status_wine_txt}",
+            f"- **Tempo de Execução:** {res_wine_teste.get('duracao')}s",
+            f"- **Arquivo de Log Completo:** `{res_wine_teste.get('log_path')}`",
+            ""
+        ])
+        if wine_diag:
+            linhas_relatorio.append("### Diagnósticos Detectados:")
+            for d in wine_diag:
+                linhas_relatorio.append(f"{d}\n")
+
     linhas_relatorio.extend([
         "",
-        "## 4. Recomendações para Execução e Teste no Wine",
+        "## 5. Recomendações para Execução e Teste no Wine",
         f"- Use prefixo Wine: `WINEPREFIX={DRIVE_WINE_PREFIX}`",
         f"- Arquitetura recomendada: {'WINEARCH=win32' if pe_info.get('bits') == 32 else 'WINEARCH=win64'}",
         "- Comando Headless recomendado no Colab: `xvfb-run -a wine <programa.exe>`",
         ""
     ])
+
+    if analise_qwen:
+        linhas_relatorio.extend([
+            "",
+            f"## 6. Parecer Técnico & Síntese Arquitetural ({modelo_ia})",
+            analise_qwen,
+            ""
+        ])
 
     relatorio_md_texto = "\n".join(linhas_relatorio)
     with open(caminho_relatorio, "w", encoding="utf-8") as f_rel:
@@ -359,7 +522,8 @@ def analisar_com_rea(caminho_alvo, output_dir=None):
         "diretorio_projeto": output_dir,
         "relatorio": caminho_relatorio,
         "pe_info": pe_info,
-        "resumo_md": relatorio_md_texto
+        "resumo_md": relatorio_md_texto,
+        "analise_ia": analise_qwen
     }
 
 

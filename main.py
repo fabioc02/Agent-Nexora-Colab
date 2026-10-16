@@ -1012,15 +1012,11 @@ REGRAS DE OURO:
 - FOQUE: não decompile o alvo inteiro. Escolha uma funcionalidade e vá fundo.
 - Se faltar ferramenta, INSTALE sozinha (apt, pip, git clone).
 
-FORMATO DE RESPOSTA RE:
-[ALVO] Nome, hash, tamanho, tipo.
-[TRIAGEM] Comandos executados e saída relevante.
-[IDENTIFICAÇÃO] Formato, arquitetura, endianness, proteções detectadas.
-[MAPA ESTRUTURAL] Headers, seções, chunks, tabelas identificadas.
-[ANÁLISE] Descobertas com evidência (offset, hex, comando).
-[HIPÓTESES] O que se acha que significa, com nível de confiança.
-[VALIDAÇÃO] Como confirmar/refutar cada hipótese.
-[ENTREGA] Ferramenta, documentação ou conclusão.
+DIRETRIZ EXECUTIVA DE ENGENHARIA REVERSA (REA):
+- Quando receber um binário, arquivo ou pasta de projeto para analisar/reverter, NUNCA responda apenas listando os nomes das etapas ou gerando modelos de texto vazios.
+- EXECUTE IMEDIATAMENTE a ferramenta REA usando <tool_call>{"name": "rea_analyze", "arguments": {"target": caminho}}</tool_call> ou comandos reais de terminal em <EXECUTAR>.
+- O módulo REA extrai automaticamente hashes, cabeçalhos PE, seções, funções importadas, strings, diagnósticos do Wine e síntese do Qwen 2.5, salvando o dossiê em /content/drive/MyDrive/AgentNexora/RE/<nome_alvo>/.
+- Trabalhe sempre com dados e evidências reais extraídas do arquivo. Nunca prometa para o próximo passo o que você pode executar agora.
 """
 
 SYSTEM_PROMPT = PROMPT_BASE_NEXORA + "\n\n" + MODULO_RE_CONDENSADO
@@ -1491,7 +1487,9 @@ FRASES_PROIBIDAS = [
 INDICADORES_DESCRICAO = [
     "passo 1", "passo 2", "etapa 1", "etapa 2",
     "step 1", "step 2",
-    "primeiro,", "segundo,", "primeiro, instale", "primeiro, execute"
+    "primeiro,", "segundo,", "primeiro, instale", "primeiro, execute",
+    "triagem inicial:", "identificação preliminar:", "vou começar com a fase",
+    "vou prosseguir com a fase", "1. triagem", "2. identificação", "3. extraia informações"
 ]
 
 def tem_ingles_predominante(resposta: str) -> bool:
@@ -1515,7 +1513,7 @@ def contem_tool_call(resposta: str) -> bool:
         r'\[AÇÃO\]', r'\[ACAO\]', r'\[EXECUTANDO\]', r'\[EXECUTA\]',
         r'terminal\(', r'write_file\(', r'read_file\(',
         r'```(?:cpp|c|java|kotlin|python|py|bash|sh|json)',
-        r'"name":\s*"(?:bash|terminal|executar_terminal|write_file|read_file|list_dir|python_eval)"',
+        r'"name":\s*"(?:bash|terminal|executar_terminal|write_file|read_file|list_dir|python_eval|rea_analyze|wine_test|innoextract)"',
         r'EXECUTAR\s+', r'RUN\s+'
     ]
     return any(re.search(p, resposta, re.IGNORECASE) for p in padroes)
@@ -1548,10 +1546,10 @@ def eh_conversa_ou_pergunta(p: str) -> bool:
     saudacoes = ['oi', 'ola', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'e ai', 'e aí', 'hello', 'hi', 'opa', 'salve', 'tudo bem', 'tudo bom', 'obrigado', 'valeu', 'como vai', 'fala', 'teste', 'eai']
     if p_clean in saudacoes or any(p_clean.startswith(s + ' ') for s in saudacoes):
         return True
-    if len(p_clean.split()) <= 2:
+    if len(p_clean.split()) <= 2 and not any(w in p_clean for w in ['rea', 're', 'pe', 'dll']):
         return True
     # Perguntas conceituais, dúvidas ou pedidos de explicação
-    termos_pergunta = ['como', 'o que', 'oque', 'qual', 'quais', 'por que', 'porque', 'onde', 'quando', 'quem', 'me explique', 'explique', 'me fale', 'fale sobre', 'pode me dizer', 'o que acha', 'analise', 'como funciona', 'ajuda', 'help', 'diga', 'responda']
+    termos_pergunta = ['como', 'o que', 'oque', 'qual', 'quais', 'por que', 'porque', 'onde', 'quando', 'quem', 'me explique', 'explique', 'me fale', 'fale sobre', 'pode me dizer', 'o que acha', 'como funciona', 'ajuda', 'help', 'diga', 'responda']
     if any(p_clean.startswith(t) for t in termos_pergunta) or p.strip().endswith('?'):
         return True
     return False
@@ -1579,7 +1577,11 @@ def validar_resposta(resposta: str, prompt_original: str = "") -> tuple[bool, st
     if so_descricao_sem_acao(resposta):
         return False, "so_descricao_sem_acao"
     # Somente se o usuário deu uma ordem explícita de ação técnica
-    palavras_acao = ['compile', 'compilar', 'crie', 'criar', 'construa', 'instale', 'execute', 'rode', 'salve', 'baixe']
+    palavras_acao = [
+        'compile', 'compilar', 'crie', 'criar', 'construa', 'instale',
+        'execute', 'rode', 'salve', 'baixe', 'analise', 'analisar',
+        'descompile', 'descompilar', 'triagem', 'investigue', 'verifique', 'dissecar', 'rea'
+    ]
     if any(pa in prompt_original.lower() for pa in palavras_acao) and not contem_tool_call(resposta):
         return False, "sem_tool_call"
     return True, "ok"
@@ -1613,6 +1615,7 @@ CORRECOES = {
 }
 
 def pensar(prompt, historico, contexto="", instrucao=""):
+    global CURRENT_CWD, AGENT_CURRENT_STATE
     url = "http://localhost:11434/api/chat"
     prompt_limpo = prompt.strip()
 
@@ -1629,38 +1632,87 @@ def pensar(prompt, historico, contexto="", instrucao=""):
         salvar_memoria(historico)
         return resposta_direta
 
-    # 2. Se o usuário solicitou especificamente análise de Style Korg, PA4x, arranjador ou enviou um arquivo .sty
-    termos_korg = ['korg', 'pa4x', 'pa3x', '.sty', 'style da korg', 'styles da korg', 'arranjador', 'teclado arranjador', 'motor de arranjo']
-    if any(k in prompt_limpo.lower() for k in termos_korg) or prompt_limpo.lower().endswith(".sty"):
-        print(f"[Agente Auto-Ação] Detectado pedido especializado Korg Style Engine: {prompt_limpo}")
-        caminho_encontrado = None
-        for parte in prompt_limpo.split():
-            if parte.strip("'\"").lower().endswith(".sty"):
-                caminho_encontrado = parte.strip("'\"")
-                break
-        resposta_korg = processar_pedido_korg_style(prompt_limpo, caminho_especifico=caminho_encontrado)
-        historico.append({"role": "user", "content": prompt})
-        historico.append({"role": "assistant", "content": resposta_korg})
-        salvar_memoria(historico)
-        return resposta_korg
+    # 2. Rastreamento inteligente de diretório/arquivo alvo mencionado (suporta caminhos com espaços)
+    caminho_detectado = None
+    
+    # 2.1 Verifica aspas
+    match_aspas = re.search(r'["\'](/[^"\']+)["\']', prompt_limpo)
+    if match_aspas:
+        caminho_detectado = match_aspas.group(1).strip()
+    
+    # 2.2 Busca padrão por caminhos absolutos /content ou /home ou /root ou /drive
+    if not caminho_detectado:
+        match_padrao = re.search(r'(/content/[^\n,;]+|/home/[^\n,;]+|/drive/[^\n,;]+)', prompt_limpo)
+        if match_padrao:
+            caminho_detectado = match_padrao.group(1).strip()
+            # Remove palavras comuns se coladas no final
+            for sufixo_invalido in [', preciso', ',preciso', ' preciso', ', favor', ' favor', ', analise', ' analise']:
+                if caminho_detectado.endswith(sufixo_invalido):
+                    caminho_detectado = caminho_detectado[:-len(sufixo_invalido)].strip()
 
-    # 3. Heurística inteligente para listagem e leitura direta de arquivos/pastas
-    eh_comando_listar = any(w in prompt_limpo.lower() for w in ['liste', 'listar', 'veja os arquivos', 'mostre os arquivos', 'conteúdo da pasta', 'diretório'])
-    caminho_candidato = prompt_limpo.strip()
-    if (caminho_candidato.startswith('/') and (os.path.exists(caminho_candidato) or caminho_candidato.startswith("/home/"))) or (caminho_candidato.startswith('/') and eh_comando_listar):
-        caminho_alvo = caminho_candidato
-        print(f"[Agente Auto-Ação] Detectado acesso direto a diretório/arquivo: {caminho_alvo}")
-        if os.path.isdir(caminho_alvo):
-            arquivos = listar_local(caminho_alvo) if (caminho_alvo.startswith("/content") or caminho_alvo.startswith(".")) else listar_pc(caminho_alvo)
-            resposta_direta = f"📁 **Arquivos em `{caminho_alvo}`:**\n\n```\n{arquivos}\n```\n\nDiretório ativo. O que deseja criar, editar ou compilar aqui?"
+    if not caminho_detectado:
+        for token in prompt_limpo.split():
+            t_clean = token.strip("'\",;()[]")
+            if t_clean.startswith("/") and (os.path.exists(t_clean) or t_clean.startswith("/content") or t_clean.startswith("/home")):
+                caminho_detectado = t_clean
+                break
+
+    # Se o usuário enviou apenas um caminho (ex: /content/drive/MyDrive/AgentNexora/...)
+    if caminho_detectado and prompt_limpo == caminho_detectado:
+        print(f"[Agente Auto-Ação] Detectado acesso direto a caminho: {caminho_detectado}")
+        if os.path.isdir(caminho_detectado):
+            CURRENT_CWD = caminho_detectado
+            arquivos = listar_local(caminho_detectado) if (caminho_detectado.startswith("/content") or caminho_detectado.startswith(".")) else listar_pc(caminho_detectado)
+            resposta_direta = f"📁 **Diretório Ativo:** `{caminho_detectado}`\n\n```\n{arquivos}\n```\n\nDiretório carregado. Deseja iniciar a análise REA ou testar no Wine?"
         else:
-            conteudo = ler_local(caminho_alvo) if (caminho_alvo.startswith("/content") or caminho_alvo.startswith(".")) else ler_pc(caminho_alvo)
-            resposta_direta = f"📄 **Arquivo `{caminho_alvo}`:**\n\n{conteudo[:1500]}"
+            conteudo = ler_local(caminho_detectado) if (caminho_detectado.startswith("/content") or caminho_detectado.startswith(".")) else ler_pc(caminho_detectado)
+            resposta_direta = f"📄 **Arquivo `{caminho_detectado}`:**\n\n{conteudo[:1500]}"
             
         historico.append({"role": "user", "content": prompt})
         historico.append({"role": "assistant", "content": resposta_direta})
         salvar_memoria(historico)
         return resposta_direta
+
+    # 3. AUTO-EXECUÇÃO DO PIPELINE REA (morluto/rea + Qwen 2.5 Dual Engine)
+    prompt_lower = prompt_limpo.lower()
+    pediu_re = any(w in prompt_lower for w in [
+        'engenharia reversa', 'analisar', 'analise', 'decompile', 'descompilar',
+        'rea', 'dissecar', 'verifique o programa', 'verifique o executável', 'investigue', 'triagem'
+    ])
+    alvo_re = caminho_detectado or CURRENT_CWD
+    if pediu_re and alvo_re and (os.path.exists(alvo_re) or alvo_re.startswith("/content/drive")):
+        print(f"[Agente Auto-REA] Disparando pipeline autônomo contínuo REA para: {alvo_re}")
+        CURRENT_CWD = alvo_re if os.path.isdir(alvo_re) else os.path.dirname(alvo_re)
+        AGENT_CURRENT_STATE["status"] = "executing_rea"
+        AGENT_CURRENT_STATE["etapa"] = f"Pipeline REA Ativo: {os.path.basename(alvo_re)}"
+        AGENT_CURRENT_STATE["ultimo_update"] = time.time()
+        
+        try:
+            from rea_engine import analisar_com_rea
+            modelo_revisor = "qwen2.5:7b" if ("dual" in ACTIVE_MODEL or "qwen" in ACTIVE_MODEL) else "hermes3:8b"
+            res_rea = analisar_com_rea(alvo_re, modelo_ia=modelo_revisor)
+            relatorio_md = res_rea.get("resumo_md", "")
+            caminho_rel = res_rea.get("relatorio", "")
+            
+            resposta_rea = (
+                f"🔬 **[PIPELINE REA EXECUTADO COM SUCESSO - NEXORA DUAL ENGINE]**\n\n"
+                f"{relatorio_md}\n\n"
+                f"📁 **Dossiê Salvo no Google Drive:**\n"
+                f"- Relatório completo: `{caminho_rel}`\n"
+                f"- Diretório de Análise: `{res_rea.get('diretorio_projeto', '')}`\n\n"
+                f"*(Processamento contínuo concluído via REA + {modelo_revisor})*"
+            )
+            
+            historico.append({"role": "user", "content": prompt})
+            historico.append({"role": "assistant", "content": resposta_rea})
+            salvar_memoria(historico)
+            
+            AGENT_CURRENT_STATE["status"] = "idle"
+            AGENT_CURRENT_STATE["etapa"] = "Análise REA concluída"
+            AGENT_CURRENT_STATE["ultimo_update"] = time.time()
+            return resposta_rea
+        except Exception as e_rea:
+            print(f"[Erro Pipeline Auto-REA]: {e_rea}")
 
     # Adiciona a mensagem do usuário ao histórico completo
     historico.append({"role": "user", "content": prompt})
@@ -1744,7 +1796,6 @@ def pensar(prompt, historico, contexto="", instrucao=""):
     recentes_compactadas = compactar_contexto(recentes, limite=16)
     mensagens_ollama = [{"role": "system", "content": system_content}] + recentes_compactadas
     
-    global AGENT_CURRENT_STATE
     AGENT_CURRENT_STATE["status"] = "thinking"
     AGENT_CURRENT_STATE["etapa"] = "Iniciando análise do prompt"
     AGENT_CURRENT_STATE["detalhes"] = prompt_limpo[:100]
@@ -1758,8 +1809,9 @@ def pensar(prompt, historico, contexto="", instrucao=""):
 
     while loop_count < max_loops:
         loop_count += 1
+        modelo_exec = "hermes3:8b" if ("dual" in ACTIVE_MODEL) else ACTIVE_MODEL
         payload = {
-            "model": ACTIVE_MODEL,
+            "model": modelo_exec,
             "messages": mensagens_ollama,
             "stream": False,
             "options": {
@@ -2427,6 +2479,19 @@ def api_system_status():
             ts_ip = ip_out.splitlines()[0].strip()
     except Exception:
         pass
+    # Detecção de Ambiente Gráfico VNC / NoVNC (XFCE)
+    vnc_online = bool(subprocess.getoutput("pgrep -f 'Xtightvnc|Xvnc|websockify' 2>/dev/null").strip())
+    vnc_url = ""
+    if os.path.exists("/tmp/cloudflared_vnc.log"):
+        try:
+            with open("/tmp/cloudflared_vnc.log", "r") as f_vnc:
+                m_vnc = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', f_vnc.read())
+                if m_vnc:
+                    vnc_url = f"{m_vnc.group(0)}/vnc.html?autoconnect=true"
+        except Exception:
+            pass
+    if not vnc_url and ts_ip:
+        vnc_url = f"http://{ts_ip}:6080/vnc.html?autoconnect=true"
 
     historico = carregar_memoria()
     return {
@@ -2438,6 +2503,8 @@ def api_system_status():
         "bridge_online": bridge_online,
         "tailscale_ip": ts_ip,
         "tailscale_connected": bool(ts_ip),
+        "vnc_online": vnc_online,
+        "vnc_url": vnc_url,
         "drive_sandbox": ALLOWED_DRIVE_DIR,
         "total_mensagens": len(historico),
         "sem_censura": MODO_SEM_CENSURA
@@ -2462,6 +2529,7 @@ def api_models_list():
         "modelo_ativo": ACTIVE_MODEL,
         "modelos_instalados": installed,
         "modelos_sugeridos": [
+            {"id": "dual:hermes3+qwen2.5", "nome": "⚡ Dual Engine: Hermes 3 + Qwen 2.5", "descricao": "Hermes 3 (Executor/Tools) + Qwen 2.5 (Analista REA/Código) na GPU L4 (24GB VRAM)"},
             {"id": "hermes3:8b", "nome": "Nous Hermes 3 (8B)", "descricao": "Agente Autônomo com Scratchpad e Tool Calling na GPU L4 (24GB VRAM)"},
             {"id": "qwen2.5:7b", "nome": "Qwen 2.5 (7B)", "descricao": "Raciocínio lógico afiado, geração de código e ferramentas"},
             {"id": "qwen2.5:14b", "nome": "Qwen 2.5 (14B)", "descricao": "Modelo de alto nível para arquitetura e engenharia complexa"},
@@ -2627,8 +2695,24 @@ def api_get_project_context(nome: str = ""):
 @api_app.post("/api/chat/clear")
 def api_chat_clear():
     salvar_memoria([])
-    print("[Web Interface] Memória do histórico limpa no Google Drive.")
-    return {"status": "ok", "mensagem": "Histórico limpo com sucesso!"}
+    try:
+        if os.path.exists(DIR_ESTADO):
+            for f in os.listdir(DIR_ESTADO):
+                fp = os.path.join(DIR_ESTADO, f)
+                if os.path.isfile(fp):
+                    os.remove(fp)
+    except Exception as e:
+        print("[Aviso] Erro ao limpar DIR_ESTADO:", e)
+    global _respostas_recentes, AGENT_CURRENT_STATE
+    _respostas_recentes.clear()
+    AGENT_CURRENT_STATE = {
+        "status": "idle",
+        "ultimo_update": time.time(),
+        "etapa": "Pronto para nova tarefa",
+        "detalhes": "Histórico e estado resetados"
+    }
+    print("[Web Interface] Memória do histórico e estado pendente 100% limpos no Google Drive.")
+    return {"status": "ok", "mensagem": "Histórico e estado do Drive limpos com sucesso!"}
 
 @api_app.post("/api/files/list")
 def api_files_list(req: FileListRequest):

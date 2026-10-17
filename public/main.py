@@ -861,14 +861,28 @@ def preparar_toolchain(tipo):
             logs.append("⚡ [Toolchain RE] Executando setup_re.sh...")
             out_setup = subprocess.getoutput("bash /content/Agent-Nexora-Colab/setup_re.sh 2>&1")
             logs.append(out_setup[-400:] if len(out_setup) > 400 else out_setup)
+        # Verifica se Ghidra analyzeHeadless está instalado
+        if not os.path.exists("/opt/ghidra/support/analyzeHeadless") and not os.path.exists("/usr/local/bin/analyzeHeadless"):
+            logs.append("⚡ [Ghidra] Baixando e instalando Ghidra Headless (NSA)...")
+            cmd_ghidra = """
+            apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless unzip wget >/dev/null 2>&1
+            mkdir -p /opt && cd /tmp
+            wget -q "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.2.1_build/ghidra_11.2.1_PUBLIC_20241024.zip" -O /tmp/ghidra.zip
+            if [ -f /tmp/ghidra.zip ]; then
+                unzip -q /tmp/ghidra.zip -d /opt/
+                mv /opt/ghidra_* /opt/ghidra 2>/dev/null || true
+                chmod +x /opt/ghidra/support/analyzeHeadless 2>/dev/null || true
+                ln -sf /opt/ghidra/support/analyzeHeadless /usr/local/bin/analyzeHeadless 2>/dev/null || true
+                rm -f /tmp/ghidra.zip
+            fi
+            """
+            subprocess.getoutput(f"bash -c {json.dumps(cmd_ghidra)}")
+            if os.path.exists("/opt/ghidra/support/analyzeHeadless") or os.path.exists("/usr/local/bin/analyzeHeadless"):
+                logs.append("✅ Ghidra Headless instalado com sucesso em `/opt/ghidra/support/analyzeHeadless`!")
+            else:
+                logs.append("⚠️ Falha ao baixar Ghidra automaticamente do GitHub.")
         else:
-            chk_r2 = subprocess.getoutput("which r2 2>/dev/null")
-            chk_binwalk = subprocess.getoutput("which binwalk 2>/dev/null")
-            if not chk_r2 or not chk_binwalk:
-                logs.append("⚡ [Toolchain RE] Instalando ferramentas binárias (radare2, binwalk, ent, xxd, binutils, wine)...")
-                subprocess.getoutput("apt-get update -qq && apt-get install -y -qq binutils file xxd bsdextrautils ent wine wine64 winetricks openjdk-17-jdk-headless")
-            subprocess.getoutput("pip install -q pefile capstone lief construct kaitaistruct mido pretty_midi pyelftools requests fastapi uvicorn pydantic")
-            subprocess.getoutput("pip install -q frida-tools flare-capa r2pipe python-rtmidi binwalk || true")
+            logs.append("✓ Ghidra Headless já está disponível em `/opt/ghidra/support/analyzeHeadless`.")
 
     return "\n".join(logs)
 
@@ -1019,7 +1033,75 @@ DIRETRIZ EXECUTIVA DE ENGENHARIA REVERSA (REA):
 - Trabalhe sempre com dados e evidências reais extraídas do arquivo. Nunca prometa para o próximo passo o que você pode executar agora.
 """
 
-SYSTEM_PROMPT = PROMPT_BASE_NEXORA + "\n\n" + MODULO_RE_CONDENSADO
+def carregar_soul_prompt():
+    """
+    Carrega dinamicamente o SOUL.md e AGENTS.md se existirem no Google Drive ou no diretório local.
+    Permite que o usuário edite o SOUL.md no Drive ou no Kali Desktop e a IA mude imediatamente!
+    """
+    caminhos_soul = [
+        "/content/drive/MyDrive/AgentNexora/SOUL.md",
+        os.path.join(args.memoria_dir, "..", "SOUL.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SOUL.md"),
+        "./SOUL.md"
+    ]
+    caminhos_agents = [
+        "/content/drive/MyDrive/AgentNexora/AGENTS.md",
+        os.path.join(args.memoria_dir, "..", "AGENTS.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "AGENTS.md"),
+        "./AGENTS.md"
+    ]
+    caminhos_security = [
+        "/content/drive/MyDrive/AgentNexora/SECURITY.md",
+        os.path.join(args.memoria_dir, "..", "SECURITY.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SECURITY.md"),
+        "./SECURITY.md"
+    ]
+    
+    conteudo_soul = ""
+    for p in caminhos_soul:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    conteudo_soul = f.read().strip()
+                if conteudo_soul:
+                    break
+            except Exception:
+                pass
+                
+    conteudo_agents = ""
+    for p in caminhos_agents:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    conteudo_agents = f.read().strip()
+                if conteudo_agents:
+                    break
+            except Exception:
+                pass
+
+    conteudo_security = ""
+    for p in caminhos_security:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    conteudo_security = f.read().strip()
+                if conteudo_security:
+                    break
+            except Exception:
+                pass
+
+    if conteudo_soul:
+        prompt_final = f"{conteudo_soul}\n\n"
+        if conteudo_agents:
+            prompt_final += f"{conteudo_agents}\n\n"
+        if conteudo_security:
+            prompt_final += f"{conteudo_security}\n\n"
+        prompt_final += MODULO_RE_CONDENSADO
+        return prompt_final
+    
+    return PROMPT_BASE_NEXORA + "\n\n" + MODULO_RE_CONDENSADO
+
+SYSTEM_PROMPT = carregar_soul_prompt()
 
 def criar_workspace_re(nome_alvo, arquivo_alvo=None):
     """
@@ -1730,8 +1812,7 @@ def pensar(prompt, historico, contexto="", instrucao=""):
     max_contexto = 5
     recentes = [m for m in historico if m.get("role") != "system"][-max_contexto:]
     logs_execucao = []
-    
-    system_content = SYSTEM_PROMPT
+    system_content = carregar_soul_prompt()
 
     # 1. Aplica instrução personalizada ativa ou enviada na requisição
     instrucao_ativa = obter_instrucao_ativa()
@@ -2095,6 +2176,9 @@ def pensar(prompt, historico, contexto="", instrucao=""):
             if tool_log: logs_execucao.append(tool_log)
         elif any(w in prompt_lower for w in ['sdl', 'gui', 'raylib', 'gtk', 'gtkmm', 'desktop', 'groove', 'sequenciador', 'sintetizador', 'synth', 'audio', 'portaudio', 'c++', 'cpp']):
             tool_log = preparar_toolchain("linux_gui")
+            if tool_log: logs_execucao.append(tool_log)
+        elif any(w in prompt_lower for w in ['ghidra', 'radare2', 'binwalk', 'rea ', 'reverse engineer', 'engenharia reversa']):
+            tool_log = preparar_toolchain("re")
             if tool_log: logs_execucao.append(tool_log)
 
         # 2. Definição do diretório de trabalho do projeto e persistência de código
@@ -2664,6 +2748,132 @@ def api_delete_instruction(inst_id: str):
         return {"status": "ok", "mensagem": "Instrução excluída com sucesso!", "instrucoes": nova_lista}
     except Exception as e:
         return {"status": "erro", "erro": str(e)}
+
+class TextFileUpdateRequest(BaseModel):
+    conteudo: str
+
+@api_app.get("/api/agent/soul")
+def api_get_soul():
+    caminhos = [
+        "/content/drive/MyDrive/AgentNexora/SOUL.md",
+        os.path.join(args.memoria_dir, "..", "SOUL.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SOUL.md"),
+        "./SOUL.md"
+    ]
+    for p in caminhos:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return {"status": "ok", "path": p, "conteudo": f.read()}
+            except Exception as e:
+                return {"status": "erro", "erro": str(e), "path": p}
+    return {"status": "ok", "path": "./SOUL.md", "conteudo": ""}
+
+@api_app.post("/api/agent/soul")
+def api_save_soul(req: TextFileUpdateRequest):
+    try:
+        conteudo = req.conteudo
+        paths = ["/content/drive/MyDrive/AgentNexora/SOUL.md", "./SOUL.md"]
+        salvos = []
+        for p in paths:
+            try:
+                d = os.path.dirname(p)
+                if d and not os.path.exists(d):
+                    os.makedirs(d, exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(conteudo)
+                salvos.append(p)
+            except Exception:
+                pass
+        return {"status": "ok", "mensagem": "SOUL.md atualizado com sucesso!", "salvos": salvos}
+    except Exception as e:
+        return {"status": "erro", "erro": str(e)}
+
+@api_app.get("/api/agent/agents_spec")
+def api_get_agents_spec():
+    caminhos = [
+        "/content/drive/MyDrive/AgentNexora/AGENTS.md",
+        os.path.join(args.memoria_dir, "..", "AGENTS.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "AGENTS.md"),
+        "./AGENTS.md"
+    ]
+    for p in caminhos:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return {"status": "ok", "path": p, "conteudo": f.read()}
+            except Exception as e:
+                return {"status": "erro", "erro": str(e), "path": p}
+    return {"status": "ok", "path": "./AGENTS.md", "conteudo": ""}
+
+@api_app.post("/api/agent/agents_spec")
+def api_save_agents_spec(req: TextFileUpdateRequest):
+    try:
+        conteudo = req.conteudo
+        paths = ["/content/drive/MyDrive/AgentNexora/AGENTS.md", "./AGENTS.md"]
+        salvos = []
+        for p in paths:
+            try:
+                d = os.path.dirname(p)
+                if d and not os.path.exists(d):
+                    os.makedirs(d, exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(conteudo)
+                salvos.append(p)
+            except Exception:
+                pass
+        return {"status": "ok", "mensagem": "AGENTS.md atualizado com sucesso!", "salvos": salvos}
+    except Exception as e:
+        return {"status": "erro", "erro": str(e)}
+
+@api_app.get("/api/agent/security")
+def api_get_security():
+    caminhos = [
+        "/content/drive/MyDrive/AgentNexora/SECURITY.md",
+        os.path.join(args.memoria_dir, "..", "SECURITY.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SECURITY.md"),
+        "./SECURITY.md"
+    ]
+    for p in caminhos:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return {"status": "ok", "path": p, "conteudo": f.read()}
+            except Exception as e:
+                return {"status": "erro", "erro": str(e), "path": p}
+    return {"status": "ok", "path": "./SECURITY.md", "conteudo": ""}
+
+@api_app.post("/api/agent/security")
+def api_save_security(req: TextFileUpdateRequest):
+    try:
+        conteudo = req.conteudo
+        paths = ["/content/drive/MyDrive/AgentNexora/SECURITY.md", "./SECURITY.md"]
+        salvos = []
+        for p in paths:
+            try:
+                d = os.path.dirname(p)
+                if d and not os.path.exists(d):
+                    os.makedirs(d, exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(conteudo)
+                salvos.append(p)
+            except Exception:
+                pass
+        return {"status": "ok", "mensagem": "SECURITY.md atualizado com sucesso!", "salvos": salvos}
+    except Exception as e:
+        return {"status": "erro", "erro": str(e)}
+
+@api_app.get("/api/agent/modelfiles")
+def api_get_modelfiles():
+    resultado = {}
+    for mf in ["Modelfile.hermes3", "Modelfile.qwen2.5"]:
+        if os.path.exists(mf):
+            try:
+                with open(mf, "r", encoding="utf-8") as f:
+                    resultado[mf] = f.read()
+            except Exception:
+                pass
+    return {"status": "ok", "modelfiles": resultado}
 
 @api_app.post("/api/projects/context")
 def api_save_project_context(req: ProjectContextRequest):

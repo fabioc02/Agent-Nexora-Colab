@@ -861,14 +861,28 @@ def preparar_toolchain(tipo):
             logs.append("⚡ [Toolchain RE] Executando setup_re.sh...")
             out_setup = subprocess.getoutput("bash /content/Agent-Nexora-Colab/setup_re.sh 2>&1")
             logs.append(out_setup[-400:] if len(out_setup) > 400 else out_setup)
+        # Verifica se Ghidra analyzeHeadless está instalado
+        if not os.path.exists("/opt/ghidra/support/analyzeHeadless") and not os.path.exists("/usr/local/bin/analyzeHeadless"):
+            logs.append("⚡ [Ghidra] Baixando e instalando Ghidra Headless (NSA)...")
+            cmd_ghidra = """
+            apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless unzip wget >/dev/null 2>&1
+            mkdir -p /opt && cd /tmp
+            wget -q "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.2.1_build/ghidra_11.2.1_PUBLIC_20241024.zip" -O /tmp/ghidra.zip
+            if [ -f /tmp/ghidra.zip ]; then
+                unzip -q /tmp/ghidra.zip -d /opt/
+                mv /opt/ghidra_* /opt/ghidra 2>/dev/null || true
+                chmod +x /opt/ghidra/support/analyzeHeadless 2>/dev/null || true
+                ln -sf /opt/ghidra/support/analyzeHeadless /usr/local/bin/analyzeHeadless 2>/dev/null || true
+                rm -f /tmp/ghidra.zip
+            fi
+            """
+            subprocess.getoutput(f"bash -c {json.dumps(cmd_ghidra)}")
+            if os.path.exists("/opt/ghidra/support/analyzeHeadless") or os.path.exists("/usr/local/bin/analyzeHeadless"):
+                logs.append("✅ Ghidra Headless instalado com sucesso em `/opt/ghidra/support/analyzeHeadless`!")
+            else:
+                logs.append("⚠️ Falha ao baixar Ghidra automaticamente do GitHub.")
         else:
-            chk_r2 = subprocess.getoutput("which r2 2>/dev/null")
-            chk_binwalk = subprocess.getoutput("which binwalk 2>/dev/null")
-            if not chk_r2 or not chk_binwalk:
-                logs.append("⚡ [Toolchain RE] Instalando ferramentas binárias (radare2, binwalk, ent, xxd, binutils, wine)...")
-                subprocess.getoutput("apt-get update -qq && apt-get install -y -qq binutils file xxd bsdextrautils ent wine wine64 winetricks openjdk-17-jdk-headless")
-            subprocess.getoutput("pip install -q pefile capstone lief construct kaitaistruct mido pretty_midi pyelftools requests fastapi uvicorn pydantic")
-            subprocess.getoutput("pip install -q frida-tools flare-capa r2pipe python-rtmidi binwalk || true")
+            logs.append("✓ Ghidra Headless já está disponível em `/opt/ghidra/support/analyzeHeadless`.")
 
     return "\n".join(logs)
 
@@ -1797,6 +1811,7 @@ def pensar(prompt, historico, contexto="", instrucao=""):
     # Janela deslizante de contexto: envia apenas as últimas 5 mensagens para o Ollama
     max_contexto = 5
     recentes = [m for m in historico if m.get("role") != "system"][-max_contexto:]
+    logs_execucao = []
     system_content = carregar_soul_prompt()
 
     # 1. Aplica instrução personalizada ativa ou enviada na requisição
@@ -2161,6 +2176,9 @@ def pensar(prompt, historico, contexto="", instrucao=""):
             if tool_log: logs_execucao.append(tool_log)
         elif any(w in prompt_lower for w in ['sdl', 'gui', 'raylib', 'gtk', 'gtkmm', 'desktop', 'groove', 'sequenciador', 'sintetizador', 'synth', 'audio', 'portaudio', 'c++', 'cpp']):
             tool_log = preparar_toolchain("linux_gui")
+            if tool_log: logs_execucao.append(tool_log)
+        elif any(w in prompt_lower for w in ['ghidra', 'radare2', 'binwalk', 'rea ', 'reverse engineer', 'engenharia reversa']):
+            tool_log = preparar_toolchain("re")
             if tool_log: logs_execucao.append(tool_log)
 
         # 2. Definição do diretório de trabalho do projeto e persistência de código

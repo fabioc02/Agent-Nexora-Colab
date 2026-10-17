@@ -228,6 +228,39 @@ for i in {1..25}; do
     sleep 1
 done
 
+# Permite passar TAILSCALE_AUTHKEY via variável de ambiente ou 2º argumento
+TAILSCALE_AUTHKEY="${TAILSCALE_AUTHKEY:-$2}"
+ts_ip=""
+
+if [ -n "$TAILSCALE_AUTHKEY" ]; then
+    echo "🛡️ [6.5/7] Conectando à sua rede privada Tailscale (P2P WireGuard - Zero Timeouts)..."
+    if ! command -v tailscale &>/dev/null; then
+        echo "-> Baixando e instalando Tailscale no Colab..."
+        curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true
+    fi
+    mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true
+    chmod 600 /dev/net/tun 2>/dev/null || true
+
+    if ! pgrep -f "tailscaled" >/dev/null; then
+        echo "-> Subindo daemon tailscaled (modo userspace)..."
+        tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 > /tmp/tailscaled.log 2>&1 &
+        sleep 2
+    fi
+
+    echo "-> Autenticando com sua Tailscale Auth Key..."
+    tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true
+    sleep 2
+
+    raw_ts_ip=$(tailscale ip -4 2>/dev/null || echo "")
+    if [ -n "$raw_ts_ip" ] && [[ "$raw_ts_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+        ts_ip=$(echo "$raw_ts_ip" | head -n 1 | tr -d '[:space:]')
+        echo "✓ Tailscale conectado com sucesso! IP do Colab: $ts_ip"
+        tailscale serve --bg --yes 5000 >/dev/null 2>&1 || true
+    fi
+else
+    echo "ℹ️ [INFO] Tailscale não configurado (opcional). Usando túneis Cloudflare 100% automáticos (sem necessidade de token)!"
+fi
+
 echo ""
 echo "=========================================================================="
 echo "🐉 ECOSSISTEMA NEXORA + KALI DESKTOP ONLINE! (HERMES 3 & QWEN 2.5 NA GPU L4)"
@@ -241,8 +274,15 @@ if [ -n "$cf_url" ]; then
     echo "☁️ SERVIDOR 1 (COLAB API - COLE NA INTERFACE WEB):"
     echo "👉 $cf_url 👈"
 fi
+if [ -n "$ts_ip" ]; then
+    echo "--------------------------------------------------------------------------"
+    echo "🛡️ TAILSCALE P2P (REDE PRIVADA - ZERO TIMEOUTS PARA TAREFAS LONGAS):"
+    echo "👉 API: http://$ts_ip:5000"
+    echo "👉 VNC Web: http://$ts_ip:6080/vnc.html?autoconnect=true"
+fi
 echo "=========================================================================="
 echo ""
 
 # Inicia o servidor API do Nexora com persistência no Drive
-python3 main.py --api --port 5000 --modelo "$MODELO_PRIMARIO" --sem_censura --memoria_dir "/content/drive/MyDrive/AgentNexora/memory"
+python3 main.py --api --port 5000 --modelo "$MODELO_PRIMARIO" --sem_censura --memoria_dir "/content/drive/MyDrive/AgentNexora/memory" --tailscale_authkey "$TAILSCALE_AUTHKEY"
+

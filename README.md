@@ -248,9 +248,34 @@ run_bash("ollama pull hermes3:8b")
 run_bash("ollama pull qwen2.5:7b")
 
 # ------------------------------------------------------------------------------
-# 7. REDE & SERVIDORES: CLOUDFLARE + NEXORA API
+# 7. REDE & SERVIDORES: CLOUDFLARE + TAILSCALE (OPCIONAL) + NEXORA API
 # ------------------------------------------------------------------------------
 print("\n🛡️ [7/7] Subindo conexões e Servidor API do Nexora...")
+
+# Se fornecida AuthKey do Tailscale, conecta imediatamente em modo userspace
+ts_ip = ""
+if TAILSCALE_AUTHKEY.strip():
+    print("🛡️ Conectando à malha Tailscale com sua Auth Key...")
+    run_bash("""
+    if ! command -v tailscale &>/dev/null; then
+        curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true
+    fi
+    mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true
+    chmod 600 /dev/net/tun 2>/dev/null || true
+    if ! pgrep -f "tailscaled" >/dev/null; then
+        tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 > /tmp/tailscaled.log 2>&1 &
+        sleep 2
+    fi
+    """)
+    run_bash(f'tailscale up --authkey="{TAILSCALE_AUTHKEY.strip()}" --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true')
+    time.sleep(2)
+    raw_ip = subprocess.getoutput("tailscale ip -4 2>/dev/null").strip()
+    if raw_ip and "." in raw_ip and not "failed" in raw_ip.lower():
+        ts_ip = raw_ip.splitlines()[0].strip()
+        print(f"✓ Tailscale conectado com sucesso! IP do Colab: {ts_ip}")
+        subprocess.Popen("tailscale serve --bg --yes 5000 >/dev/null 2>&1 || true", shell=True)
+else:
+    print("ℹ️ Tailscale não configurado (opcional). Usando túneis Cloudflare 100% automáticos (sem necessidade de token)!")
 
 # Túnel Cloudflare para a API na porta 5000
 run_bash("pkill -f 'cloudflared.*5000' || true")
@@ -272,27 +297,24 @@ for _ in range(25):
         break
     time.sleep(1)
 
-ts_ip = subprocess.getoutput("tailscale ip -4 2>/dev/null").strip()
-
 print("\n" + "="*75)
-print("🚀 NEXORA AGENT + REA & WINE SANDBOX + DESKTOP VNC ONLINE!")
+print("🚀 NEXORA AGENT + KALI DESKTOP (VNC) + DUAL ENGINE (HERMES/QWEN) ONLINE!")
 print("="*75)
 if cf_url:
-    print(f"🌐 INTERFACE WEB (HTTPS): {cf_url}")
+    print(f"🌐 INTERFACE WEB (HTTPS - SEM TOKEN): {cf_url}")
     print("   👉 Cole o link acima no campo 'Servidor 1: Google Colab' da Web UI.")
 if vnc_cf_url:
-    print(f"🖥️ DESKTOP GRÁFICO (NoVNC Web): {vnc_cf_url}")
-    print("   👉 Abra o link acima no navegador para acessar o desktop XFCE / Kali completo!")
-elif ts_ip and "." in ts_ip:
-    print(f"🖥️ DESKTOP GRÁFICO (Tailscale Web): http://{ts_ip}:6080/vnc.html?autoconnect=true")
-    print(f"   👉 Cliente VNC (TigerVNC): {ts_ip}:5901 (Senha: nexora123)")
-if ts_ip and "." in ts_ip and not "failed" in ts_ip.lower():
-    print(f"🛡️ IP TAILSCALE DO COLAB (SEM TIMEOUT): http://{ts_ip}:5000")
-    print("   👉 Conexão P2P WireGuard direta com seu Kali Linux sem nenhuma queda!")
+    print(f"🖥️ DESKTOP KALI LINUX (NoVNC Web): {vnc_cf_url}")
+    print("   👉 Abra o link acima no navegador para acessar o desktop XFCE / Kali com Wine!")
+if ts_ip:
+    print("---------------------------------------------------------------------------")
+    print(f"🛡️ CONEXÃO DIRETA TAILSCALE (P2P WireGuard - ZERO TIMEOUTS):")
+    print(f"👉 API Colab: http://{ts_ip}:5000")
+    print(f"👉 Desktop VNC: http://{ts_ip}:6080/vnc.html?autoconnect=true")
 print("="*75 + "\n")
 
 # Inicia o Servidor FastAPI do Nexora na porta 5000
-run_bash(f'python3 main.py --api --port 5000 --modelo "{MODELO_PADRAO}" --memoria_dir "/content/drive/MyDrive/AgentNexora/memory"')
+run_bash(f'python3 main.py --api --port 5000 --modelo "{MODELO_PADRAO}" --sem_censura --memoria_dir "/content/drive/MyDrive/AgentNexora/memory" --tailscale_authkey "{TAILSCALE_AUTHKEY.strip()}"')
 ```
 
 ---

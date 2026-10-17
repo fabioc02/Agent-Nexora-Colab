@@ -4276,11 +4276,14 @@ python3 ponte_local.py`}
               </button>
             </div>
             <pre className="bg-black/60 p-2.5 rounded border border-white/5 font-mono text-[11px] text-neutral-300 overflow-x-auto">
-{`# Inicia Dual Engine (Hermes 3 + Qwen 2.5), Kali Repo, Desktop VNC (porta 6080) e API:
-!bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5`}
+{`# Opção 1 (Padrão - SEM TOKEN, 100% automático via Cloudflare):
+!bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5
+
+# Opção 2 (Opcional - Com Tailscale para Zero Timeouts):
+# TAILSCALE_AUTHKEY="tskey-auth-..." !bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5`}
             </pre>
             <p className="text-[11px] text-neutral-400 leading-relaxed">
-              O script inicia os túneis para a <strong>Web API</strong> (porta 5000) e para a <strong>Área de Trabalho Gráfica VNC</strong> (porta 6080, senha <code>nexora123</code>).
+              Inicia o <strong>Desktop Gráfico Kali (noVNC na porta 6080)</strong> e a <strong>API Nexora (porta 5000)</strong>. Não precisa de token para o Cloudflare funcionar.
             </p>
           </div>
         </div>

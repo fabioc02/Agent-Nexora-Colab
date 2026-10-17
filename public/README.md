@@ -73,16 +73,32 @@ else:
     os.chdir("/content/Agent-Nexora-Colab")
 
 # ------------------------------------------------------------------------------
-# 4. INSTALAÇÃO DO AMBIENTE WINE, ÁUDIO, XFCE E FERRAMENTAS DE SISTEMA
+# 4. INSTALAÇÃO DO AMBIENTE WINE, ÁUDIO, XFCE E REPOSITÓRIO KALI LINUX
 # ------------------------------------------------------------------------------
-print("\n🐉 [4/7] Instalando Ambiente Gráfico, Wine Multiarch, Áudio e Utilitários...")
+print("\n🐉 [4/7] Instalando Ambiente Gráfico, Kali Repo, Wine Multiarch e Áudio...")
 os.environ["DEBIAN_FRONTEND"] = "noninteractive"
+os.environ["USER"] = "root"
+os.environ["HOME"] = "/root"
+
 run_bash("dpkg --add-architecture i386 2>/dev/null || true")
 run_bash("apt-get update -qq")
 
+# Configura repositório oficial do Kali Linux com pin de segurança (não sobrescreve pacotes base)
+run_bash("""
+curl -fsSL https://archive.kali.org/archive-key.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/kali-archive-keyring.gpg 2>/dev/null || true
+echo "deb [signed-by=/etc/apt/trusted.gpg.d/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list.d/kali.list
+cat << 'KALI_EOF' > /etc/apt/preferences.d/kali.pref
+Package: *
+Pin: release o=Kali
+Pin-Priority: 50
+KALI_EOF
+apt-get update -qq 2>/dev/null || true
+""")
+
 run_bash("""
 apt-get install -y --no-install-recommends \
-    xfce4 xfce4-terminal tightvncserver novnc websockify \
+    xfce4 xfce4-goodies xfce4-terminal tightvncserver novnc websockify \
+    dbus-x11 x11-xserver-utils \
     wine wine64 winetricks xvfb xauth libx11-6 \
     p7zip-full innoextract icoutils cabextract unrar \
     binutils file xxd bsdextrautils bsdmainutils ent zstd \
@@ -104,29 +120,36 @@ run_bash("chmod +x /usr/local/bin/wine-headless")
 # ------------------------------------------------------------------------------
 # 4.1. INICIALIZAÇÃO DO AMBIENTE GRÁFICO XFCE + VNC + NoVNC (ACESSO WEB)
 # ------------------------------------------------------------------------------
-print("\n🖥️ [4.1/7] Subindo Ambiente Gráfico Desktop (XFCE + VNC + NoVNC)...")
+print("\n🖥️ [4.1/7] Subindo Ambiente Gráfico Desktop (XFCE + Kali + VNC + NoVNC)...")
 run_bash("""
+export USER=root
+export HOME=/root
+
 # Limpeza completa de travas anteriores do X11 e VNC
 vncserver -kill :1 2>/dev/null || true
 pkill -9 -f "Xtightvnc|Xvnc|websockify" 2>/dev/null || true
 rm -rf /tmp/.X11-unix/X1 /tmp/.X1-lock /tmp/.X5901-lock 2>/dev/null || true
 
-mkdir -p ~/.vnc
-echo "nexora123" | vncpasswd -f > ~/.vnc/passwd
-chmod 600 ~/.vnc/passwd
+mkdir -p /root/.vnc
+echo "nexora123" | vncpasswd -f > /root/.vnc/passwd
+chmod 600 /root/.vnc/passwd
 
-cat << 'EOF' > ~/.vnc/xstartup
+cat << 'EOF' > /root/.vnc/xstartup
 #!/bin/bash
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
-xrdb $HOME/.Xresources 2>/dev/null || true
-startxfce4 &
+export USER=root
+export HOME=/root
+[ -r /root/.Xresources ] && xrdb /root/.Xresources
+xsetroot -solid "#1a1b26"
+vncconfig -iconic &
+dbus-launch --exit-with-session startxfce4 &
 EOF
-chmod +x ~/.vnc/xstartup
+chmod +x /root/.vnc/xstartup
 
-vncserver :1 -geometry 1366x768 -depth 24
+USER=root vncserver :1 -geometry 1366x768 -depth 24
 
-# Link simbólico para garantir que a página web padrão abra direto
+# Garante que o NoVNC Web esteja pronto
 ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
 
 # Sobe o proxy Websocket para VNC na porta 6080

@@ -1685,23 +1685,28 @@ def pensar(prompt, historico, contexto="", instrucao=""):
         CURRENT_CWD = alvo_re if os.path.isdir(alvo_re) else os.path.dirname(alvo_re)
         AGENT_CURRENT_STATE["status"] = "executing_rea"
         AGENT_CURRENT_STATE["etapa"] = f"Pipeline REA Ativo: {os.path.basename(alvo_re)}"
-        AGENT_CURRENT_STATE["ultimo_update"] = time.time()
-        
         try:
             from rea_engine import analisar_com_rea
             modelo_revisor = "qwen2.5:7b" if ("dual" in ACTIVE_MODEL or "qwen" in ACTIVE_MODEL) else "hermes3:8b"
             res_rea = analisar_com_rea(alvo_re, modelo_ia=modelo_revisor)
-            relatorio_md = res_rea.get("resumo_md", "")
-            caminho_rel = res_rea.get("relatorio", "")
             
-            resposta_rea = (
-                f"🔬 **[PIPELINE REA EXECUTADO COM SUCESSO - NEXORA DUAL ENGINE]**\n\n"
-                f"{relatorio_md}\n\n"
-                f"📁 **Dossiê Salvo no Google Drive:**\n"
-                f"- Relatório completo: `{caminho_rel}`\n"
-                f"- Diretório de Análise: `{res_rea.get('diretorio_projeto', '')}`\n\n"
-                f"*(Processamento contínuo concluído via REA + {modelo_revisor})*"
-            )
+            if not res_rea.get("sucesso", True):
+                erro_msg = res_rea.get("erro", "Falha na localização do alvo.")
+                pastas_sug = res_rea.get("pastas_disponiveis_drive", [])
+                sugestao_txt = ("\n\n📁 **Pastas localizadas no seu Drive (`/content/drive/MyDrive/AgentNexora`):**\n" + "\n".join(f"- `{p}`" for p in pastas_sug)) if pastas_sug else ""
+                resposta_rea = f"⚠️ **[Alvo não localizado no Google Drive]**\n{erro_msg}{sugestao_txt}\n\nPor favor, confirme o caminho ou envie o arquivo para a pasta do Drive."
+            else:
+                relatorio_md = res_rea.get("resumo_md", "")
+                caminho_rel = res_rea.get("relatorio", "")
+                
+                resposta_rea = (
+                    f"🔬 **[PIPELINE REA EXECUTADO COM SUCESSO - NEXORA DUAL ENGINE]**\n\n"
+                    f"{relatorio_md}\n\n"
+                    f"📁 **Dossiê Salvo no Google Drive:**\n"
+                    f"- Relatório completo: `{caminho_rel}`\n"
+                    f"- Diretório de Análise: `{res_rea.get('diretorio_projeto', '')}`\n\n"
+                    f"*(Processamento contínuo concluído via REA + {modelo_revisor})*"
+                )
             
             historico.append({"role": "user", "content": prompt})
             historico.append({"role": "assistant", "content": resposta_rea})
@@ -1962,8 +1967,9 @@ def pensar(prompt, historico, contexto="", instrucao=""):
                     target_val = fn_args.get("target") or fn_args.get("caminho") or fn_args.get("path") or ""
                     if target_val:
                         from rea_engine import analisar_com_rea
-                        res_rea = analisar_com_rea(target_val)
-                        logs_execucao.append(f"🔬 **REA Suite (morluto/rea):** `{os.path.basename(target_val)}`\n- Relatório: `{res_rea.get('relatorio', '')}`\n- Arquitetura: `{res_rea.get('pe_info', {}).get('arch', 'N/A')}`")
+                        mod_rev = "qwen2.5:7b" if ("dual" in ACTIVE_MODEL or "qwen" in ACTIVE_MODEL) else "hermes3:8b"
+                        res_rea = analisar_com_rea(target_val, modelo_ia=mod_rev)
+                        logs_execucao.append(f"🔬 **REA Suite (morluto/rea + {mod_rev}):** `{os.path.basename(target_val)}`\n- Relatório: `{res_rea.get('relatorio', '')}`\n- Arquitetura: `{res_rea.get('pe_info', {}).get('arch', 'N/A')}`")
                         mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_analyze\", \"result\": {json.dumps(res_rea.get('resumo_md', '')[:1500])}}}\n</tool_response>"})
                         tem_acao = True
 

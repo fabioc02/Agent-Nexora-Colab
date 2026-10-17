@@ -277,10 +277,40 @@ def analisar_com_rea(caminho_alvo, output_dir=None, modelo_ia="qwen2.5:7b"):
     Executa a suíte REA (morluto/rea) e decompilação/triagem completa,
     salvando relatórios e evidências no Google Drive.
     """
+    # Resolução Inteligente de Caminho (caso haja divergência de maiúsculas/minúsculas ou espaços)
     if not os.path.exists(caminho_alvo):
-        return {"sucesso": False, "erro": f"Arquivo não encontrado: {caminho_alvo}"}
+        caminho_ajustado = None
+        base_dir = os.path.dirname(caminho_alvo.rstrip('/'))
+        alvo_nome = os.path.basename(caminho_alvo.rstrip('/'))
+        
+        # 1. Procura no diretório pai
+        if os.path.exists(base_dir):
+            for item in os.listdir(base_dir):
+                if item.lower() == alvo_nome.lower() or item.lower().replace(" ", "") == alvo_nome.lower().replace(" ", ""):
+                    caminho_ajustado = os.path.join(base_dir, item)
+                    break
+                    
+        # 2. Procura na raiz de AgentNexora no Drive
+        if not caminho_ajustado and os.path.exists("/content/drive/MyDrive/AgentNexora"):
+            for item in os.listdir("/content/drive/MyDrive/AgentNexora"):
+                if item.lower() == alvo_nome.lower() or item.lower().replace(" ", "") == alvo_nome.lower().replace(" ", ""):
+                    caminho_ajustado = os.path.join("/content/drive/MyDrive/AgentNexora", item)
+                    break
+                    
+        if caminho_ajustado and os.path.exists(caminho_ajustado):
+            print(f"[REA Engine] Caminho correspondido no Drive: '{caminho_ajustado}'")
+            caminho_alvo = caminho_ajustado
+        else:
+            pastas_existentes = []
+            if os.path.exists("/content/drive/MyDrive/AgentNexora"):
+                pastas_existentes = [p for p in os.listdir("/content/drive/MyDrive/AgentNexora") if not p.startswith(".")]
+            return {
+                "sucesso": False,
+                "erro": f"Caminho não encontrado: `{caminho_alvo}`",
+                "pastas_disponiveis_drive": pastas_existentes
+            }
 
-    nome_arquivo = os.path.basename(caminho_alvo)
+    nome_arquivo = os.path.basename(caminho_alvo.rstrip('/'))
     nome_sanitizado = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', nome_arquivo)
     
     if not output_dir:
@@ -302,8 +332,14 @@ def analisar_com_rea(caminho_alvo, output_dir=None, modelo_ia="qwen2.5:7b"):
     arquivos_extraidos = []
 
     if is_diretorio:
-        # Se for um diretório de instalação (ex: One Man Band 10 + serial)
+        # Se for um diretório de instalação
         arquivos_dir = sorted(os.listdir(caminho_alvo))
+        if not arquivos_dir:
+            return {
+                "sucesso": False,
+                "erro": f"O diretório `{caminho_alvo}` está vazio.",
+                "diretorio_projeto": output_dir
+            }
         caminho_copia = None
         
         # Procura arquivos comprimidos da Microsoft (*.ex_, *.dl_, *.in_) ou .exe
@@ -322,7 +358,7 @@ def analisar_com_rea(caminho_alvo, output_dir=None, modelo_ia="qwen2.5:7b"):
         if os.path.exists(dir_extraidos):
             arquivos_extraidos = sorted(os.listdir(dir_extraidos))
 
-        # Escolhe o executável principal para dissecção profunda (ex: omb.exe > setup.exe > setup1.exe)
+        # Escolhe o executável principal para dissecção profunda
         candidatos_exe = [
             os.path.join(dir_extraidos, "omb.exe"),
             os.path.join(dir_extraidos, "OMB.EXE"),
@@ -342,6 +378,13 @@ def analisar_com_rea(caminho_alvo, output_dir=None, modelo_ia="qwen2.5:7b"):
                     break
         
         if not caminho_copia:
+            for ad in arquivos_dir:
+                p_c = os.path.join(caminho_alvo, ad)
+                if os.path.isfile(p_c) and p_c.lower().endswith('.exe'):
+                    caminho_copia = p_c
+                    break
+                    
+        if not caminho_copia and arquivos_dir:
             caminho_copia = os.path.join(caminho_alvo, arquivos_dir[0])
     else:
         # Cópia segura para o diretório original

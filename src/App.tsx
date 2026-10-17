@@ -4266,21 +4266,21 @@ python3 ponte_local.py`}
           {/* Servidor 1: Google Colab */}
           <div className="bg-black/40 border border-white/5 rounded-lg p-4 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-neutral-200">2. No Google Colab (GPU L4 24GB):</span>
+              <span className="font-semibold text-neutral-200">2. No Google Colab (GPU L4 24GB + Desktop VNC):</span>
               <button 
-                onClick={() => copyToClipboard('!bash iniciar_colab_hermes.sh hermes3:8b', 'colab')}
+                onClick={() => copyToClipboard('!bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5', 'colab')}
                 className="text-[11px] text-neutral-400 hover:text-white flex items-center gap-1"
               >
                 {copiedCmd === 'colab' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                {copiedCmd === 'colab' ? 'Copiado!' : 'Copiar'}
+                {copiedCmd === 'colab' ? 'Copiado!' : 'Copiar Comando'}
               </button>
             </div>
             <pre className="bg-black/60 p-2.5 rounded border border-white/5 font-mono text-[11px] text-neutral-300 overflow-x-auto">
-{`# Inicia Ollama, GPU L4, túneis e API:
-!bash iniciar_colab_hermes.sh hermes3:8b`}
+{`# Inicia Dual Engine (Hermes 3 + Qwen 2.5), Kali Repo, Desktop VNC (porta 6080) e API:
+!bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5`}
             </pre>
             <p className="text-[11px] text-neutral-400 leading-relaxed">
-              Você pode conectar o Tailscale direto pelo card acima ou definir <code>TAILSCALE_AUTHKEY</code> no notebook para sessões ininterruptas de horas seguidas.
+              O script inicia os túneis para a <strong>Web API</strong> (porta 5000) e para a <strong>Área de Trabalho Gráfica VNC</strong> (porta 6080, senha <code>nexora123</code>).
             </p>
           </div>
         </div>

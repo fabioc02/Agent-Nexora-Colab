@@ -86,13 +86,18 @@ run_bash("apt-get update -qq")
 run_bash("""
 apt-get install -y --no-install-recommends \
     xvfb x11vnc novnc websockify dbus-x11 \
-    xfwm4 xfce4-panel xfdesktop4 xfce4-terminal \
+    xfwm4 xfce4-panel xfdesktop4 xfce4-terminal mousepad nano \
     x11-xserver-utils feh thunar zstd net-tools \
     bzip2 libgtk-3-0 libdbus-glib-1-2 \
     wine wine64 winetricks unrar p7zip-full innoextract \
     binutils file xxd bsdextrautils bsdmainutils ent \
     curl wget git python3-pip python3-dev build-essential > /dev/null 2>&1
 """)
+
+# Sincroniza SOUL.md, AGENTS.md e SECURITY.md com o Google Drive
+for f_prompt in ["SOUL.md", "AGENTS.md", "SECURITY.md", "Modelfile.hermes3", "Modelfile.qwen2.5"]:
+    if os.path.exists(f_prompt) and not os.path.exists(f"{DRIVE_BASE}/{f_prompt}"):
+        run_bash(f"cp -f '{f_prompt}' '{DRIVE_BASE}/{f_prompt}' 2>/dev/null || true")
 
 # Cria o wrapper wine-headless para evitar travamentos de display
 with open('/usr/local/bin/wine-headless', 'w') as f:
@@ -110,11 +115,66 @@ cat << 'EOF' > /root/Desktop/terminal.desktop
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Terminal Kali
+Name=Terminal Kali Root
 Exec=xfce4-terminal --geometry=110x30
 Icon=utilities-terminal
 Terminal=false
 Categories=System;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_soul.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🧠 Editar SOUL.md (Personalidade)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/SOUL.md
+Icon=text-editor
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_agents.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🤖 Editar AGENTS.md (Dual Engine)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/AGENTS.md
+Icon=system-run
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_security.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🔒 Editar SECURITY.md (Root & Sandbox)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/SECURITY.md
+Icon=security-high
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/drive_nexora.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=📂 Google Drive (Nexora)
+Exec=thunar /content/drive/MyDrive/AgentNexora
+Icon=folder
+Terminal=false
+Categories=System;
+EOF
+
+cat << 'EOF' > /root/Desktop/codigo_agente.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=💻 Repositório (Código Python)
+Exec=thunar /content/Agent-Nexora-Colab
+Icon=system-file-manager
+Terminal=false
+Categories=Development;
 EOF
 
 cat << 'EOF' > /root/Desktop/winecfg.desktop

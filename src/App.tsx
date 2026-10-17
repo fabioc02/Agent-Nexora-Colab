@@ -1362,6 +1362,183 @@ function InstrucoesView({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>('');
 
+  // Estados para edição direta de SOUL.md, AGENTS.md, SECURITY.md e Modelfiles
+  const [viewTab, setViewTab] = useState<'presets' | 'soul' | 'agents' | 'security' | 'modelfiles'>('presets');
+  const [soulContent, setSoulContent] = useState<string>('');
+  const [agentsContent, setAgentsContent] = useState<string>('');
+  const [securityContent, setSecurityContent] = useState<string>('');
+  const [loadingPromptFile, setLoadingPromptFile] = useState(false);
+  const [savingPromptFile, setSavingPromptFile] = useState(false);
+
+  const loadSoulFile = async () => {
+    setLoadingPromptFile(true);
+    const cleanUrl = colabUrl.trim().replace(/\/+$/, '');
+    if (cleanUrl) {
+      try {
+        const res = await fetch(`${cleanUrl}/api/agent/soul`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.conteudo) {
+            setSoulContent(data.conteudo);
+            setLoadingPromptFile(false);
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+    try {
+      const res = await fetch('/SOUL.md');
+      if (res.ok) {
+        const text = await res.text();
+        setSoulContent(text);
+      }
+    } catch (e) {}
+    setLoadingPromptFile(false);
+  };
+
+  const loadAgentsFile = async () => {
+    setLoadingPromptFile(true);
+    const cleanUrl = colabUrl.trim().replace(/\/+$/, '');
+    if (cleanUrl) {
+      try {
+        const res = await fetch(`${cleanUrl}/api/agent/agents_spec`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.conteudo) {
+            setAgentsContent(data.conteudo);
+            setLoadingPromptFile(false);
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+    try {
+      const res = await fetch('/AGENTS.md');
+      if (res.ok) {
+        const text = await res.text();
+        setAgentsContent(text);
+      }
+    } catch (e) {}
+    setLoadingPromptFile(false);
+  };
+
+  const loadSecurityFile = async () => {
+    setLoadingPromptFile(true);
+    const cleanUrl = colabUrl.trim().replace(/\/+$/, '');
+    if (cleanUrl) {
+      try {
+        const res = await fetch(`${cleanUrl}/api/agent/security`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.conteudo) {
+            setSecurityContent(data.conteudo);
+            setLoadingPromptFile(false);
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+    try {
+      const res = await fetch('/SECURITY.md');
+      if (res.ok) {
+        const text = await res.text();
+        setSecurityContent(text);
+      }
+    } catch (e) {}
+    setLoadingPromptFile(false);
+  };
+
+  useEffect(() => {
+    if (viewTab === 'soul' && !soulContent) {
+      loadSoulFile();
+    } else if (viewTab === 'agents' && !agentsContent) {
+      loadAgentsFile();
+    } else if (viewTab === 'security' && !securityContent) {
+      loadSecurityFile();
+    }
+  }, [viewTab]);
+
+  const handleSaveSoul = async () => {
+    setSavingPromptFile(true);
+    const cleanUrl = colabUrl.trim().replace(/\/+$/, '');
+    if (cleanUrl) {
+      try {
+        const res = await fetch(`${cleanUrl}/api/agent/soul`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conteudo: soulContent })
+        });
+        if (res.ok) {
+          setStatusMsg('✓ SOUL.md salvo no Google Drive e aplicado dinamicamente no Hermes!');
+          setTimeout(() => setStatusMsg(''), 4000);
+          setSavingPromptFile(false);
+          return;
+        }
+      } catch (e: any) {
+        setStatusMsg('⚠️ Erro ao salvar no Colab: ' + e.message);
+        setTimeout(() => setStatusMsg(''), 4000);
+      }
+    } else {
+      setStatusMsg('ℹ️ SOUL.md atualizado localmente. Conecte o Colab para salvar no Drive.');
+      setTimeout(() => setStatusMsg(''), 4000);
+    }
+    setSavingPromptFile(false);
+  };
+
+  const handleSaveAgents = async () => {
+    setSavingPromptFile(true);
+    const cleanUrl = colabUrl.trim().replace(/\/+$/, '');
+    if (cleanUrl) {
+      try {
+        const res = await fetch(`${cleanUrl}/api/agent/agents_spec`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conteudo: agentsContent })
+        });
+        if (res.ok) {
+          setStatusMsg('✓ AGENTS.md salvo no Google Drive com sucesso!');
+          setTimeout(() => setStatusMsg(''), 4000);
+          setSavingPromptFile(false);
+          return;
+        }
+      } catch (e: any) {
+        setStatusMsg('⚠️ Erro ao salvar no Colab: ' + e.message);
+        setTimeout(() => setStatusMsg(''), 4000);
+      }
+    } else {
+      setStatusMsg('ℹ️ AGENTS.md atualizado localmente. Conecte o Colab para salvar no Drive.');
+      setTimeout(() => setStatusMsg(''), 4000);
+    }
+    setSavingPromptFile(false);
+  };
+
+  const handleSaveSecurity = async () => {
+    setSavingPromptFile(true);
+    const cleanUrl = colabUrl.trim().replace(/\/+$/, '');
+    if (cleanUrl) {
+      try {
+        const res = await fetch(`${cleanUrl}/api/agent/security`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conteudo: securityContent })
+        });
+        if (res.ok) {
+          setStatusMsg('✓ SECURITY.md salvo no Google Drive e aplicado com sucesso!');
+          setTimeout(() => setStatusMsg(''), 4000);
+          setSavingPromptFile(false);
+          return;
+        }
+      } catch (e: any) {
+        setStatusMsg('⚠️ Erro ao salvar no Colab: ' + e.message);
+        setTimeout(() => setStatusMsg(''), 4000);
+      }
+    } else {
+      setStatusMsg('ℹ️ SECURITY.md atualizado localmente. Conecte o Colab para salvar no Drive.');
+      setTimeout(() => setStatusMsg(''), 4000);
+    }
+    setSavingPromptFile(false);
+  };
+
   const tags = ['all', ...Array.from(new Set(instructions.map(i => i.tag || 'Geral')))];
 
   const filteredInstructions = instructions.filter(i => {
@@ -1423,21 +1600,23 @@ function InstrucoesView({
         <div>
           <div className="flex items-center gap-2">
             <Sliders className="w-6 h-6 text-emerald-400" />
-            <h2 className="text-2xl font-bold text-white tracking-tight">Instruções do Sistema & Jailbreaks</h2>
+            <h2 className="text-2xl font-bold text-white tracking-tight">Cérebro do Agente, SOUL & Instruções</h2>
           </div>
           <p className="text-xs text-neutral-400 mt-1">
-            Personalize a persona, diretrizes operacionais e políticas de recusa do Hermes 3 / Nexora Agent.
+            Acesse o código e as regras dos agentes Hermes 3 e Qwen 2.5: edite <code className="text-emerald-400 font-mono">SOUL.md</code>, <code className="text-purple-400 font-mono">AGENTS.md</code> e instruções do sistema.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => handleStartEdit()}
-            className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-950/40 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nova Instrução</span>
-          </button>
+          {viewTab === 'presets' && (
+            <button
+              onClick={() => handleStartEdit()}
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-950/40 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nova Instrução</span>
+            </button>
+          )}
           <button
             onClick={onNavigateToChat}
             className="flex items-center gap-2 px-3.5 py-2 bg-white/5 hover:bg-white/10 text-neutral-200 border border-white/10 rounded-lg text-xs font-medium transition-colors cursor-pointer"
@@ -1448,12 +1627,352 @@ function InstrucoesView({
         </div>
       </div>
 
+      {/* Banner Didático de Estudo de IA & Arquitetura */}
+      <div className="bg-gradient-to-r from-blue-950/40 via-purple-950/20 to-black border border-blue-500/30 rounded-xl p-4.5 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs tracking-wide uppercase">
+            <Brain className="w-4 h-4 text-blue-400" />
+            <span>Estrutura de Código dos Agentes de IA (Hermes 3 + Qwen 2.5)</span>
+          </div>
+          <span className="text-[10px] font-mono text-neutral-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
+            GPU L4 24GB VRAM • Dual Engine
+          </span>
+        </div>
+        <div className="text-xs text-neutral-300 leading-relaxed space-y-1.5">
+          <p>
+            🔬 <strong>Por que o arquivo do Ollama (4.6 GB) abriu no bloco de notas sem código legível?</strong> No Ollama, o arquivo <code className="text-emerald-300 font-mono bg-black/60 px-1 py-0.5 rounded text-[11px]">sha256:...</code> que você encontrou no manifesto contém os <strong>pesos neurais compilados em formato binário GGUF</strong> (8 bilhões de números decimais que formam a rede neural). Modelos de IA não são scripts de texto convencionais.
+          </p>
+          <p>
+            🧠 <strong>Onde fica o "Código" e a "Lógica" do Agente?</strong> O comportamento do agente é definido pela tríade:
+            <span className="text-emerald-300 font-medium"> 1. SOUL.md</span> (identidade, regras de root e tom de voz),
+            <span className="text-purple-300 font-medium"> 2. AGENTS.md</span> (orquestração Hermes vs Qwen) e
+            <span className="text-amber-300 font-medium"> 3. main.py</span> (orquestrador agêntico que processa as ferramentas).
+          </p>
+        </div>
+      </div>
+
+      {/* Tabs Principais */}
+      <div className="flex items-center gap-2 border-b border-white/10 pb-3 overflow-x-auto">
+        <button
+          onClick={() => setViewTab('presets')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+            viewTab === 'presets'
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              : 'bg-white/5 hover:bg-white/10 text-neutral-400 border border-white/5'
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          <span>Presets de Instruções ({instructions.length})</span>
+        </button>
+
+        <button
+          onClick={() => setViewTab('soul')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+            viewTab === 'soul'
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              : 'bg-white/5 hover:bg-white/10 text-neutral-400 border border-white/5'
+          }`}
+        >
+          <Brain className="w-3.5 h-3.5 text-emerald-400" />
+          <span>🧠 SOUL.md (Alma do Hermes 3)</span>
+        </button>
+
+        <button
+          onClick={() => setViewTab('agents')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+            viewTab === 'agents'
+              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+              : 'bg-white/5 hover:bg-white/10 text-neutral-400 border border-white/5'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5 text-purple-400" />
+          <span>🤖 AGENTS.md (Dual Engine Spec)</span>
+        </button>
+
+        <button
+          onClick={() => setViewTab('security')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+            viewTab === 'security'
+              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+              : 'bg-white/5 hover:bg-white/10 text-neutral-400 border border-white/5'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
+          <span>🔒 SECURITY.md (Root & Sandbox)</span>
+        </button>
+
+        <button
+          onClick={() => setViewTab('modelfiles')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+            viewTab === 'modelfiles'
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+              : 'bg-white/5 hover:bg-white/10 text-neutral-400 border border-white/5'
+          }`}
+        >
+          <FileCode className="w-3.5 h-3.5 text-amber-400" />
+          <span>📦 Modelfiles (Ollama GGUF)</span>
+        </button>
+      </div>
+
       {statusMsg && (
         <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 flex items-center gap-2 animate-fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{statusMsg}</span>
         </div>
       )}
+
+      {/* Conteúdo da Tab: SOUL.md */}
+      {viewTab === 'soul' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="bg-[#111] border border-white/10 rounded-xl p-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-emerald-400" />
+                  <span>SOUL.md — Identidade e Diretrizes Cognitivas do Agente</span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Localização: <code className="text-emerald-400 font-mono">/content/drive/MyDrive/AgentNexora/SOUL.md</code> • Carregado em tempo real pelo <code className="text-neutral-300 font-mono">main.py</code>.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleCopy('soul_md', soulContent)}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-neutral-200 border border-white/10 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedId === 'soul_md' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>Copiar</span>
+                </button>
+                <button
+                  onClick={handleSaveSoul}
+                  disabled={savingPromptFile}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-950/40 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingPromptFile ? 'Salvando...' : 'Salvar no Drive & Colab'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-950/20 border border-emerald-500/20 rounded-lg text-[11px] text-emerald-300/90 leading-relaxed flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <strong>Como editar pelo Kali Linux (VNC):</strong> No desktop gráfico do Kali no navegador, você encontrará o atalho <strong>🧠 Editar SOUL.md</strong>. Dê duplo clique para abrir diretamente no editor de texto <em>Mousepad</em>. Qualquer alteração feita lá ou aqui é aplicada imediatamente na próxima mensagem do chat!
+              </div>
+            </div>
+
+            {loadingPromptFile ? (
+              <div className="py-12 text-center text-xs text-neutral-400 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                <span>Carregando SOUL.md do ambiente...</span>
+              </div>
+            ) : (
+              <textarea
+                value={soulContent}
+                onChange={(e) => setSoulContent(e.target.value)}
+                rows={22}
+                className="w-full bg-black/80 border border-white/10 rounded-xl p-4 font-mono text-xs text-neutral-200 leading-relaxed focus:outline-none focus:border-emerald-500/60 transition-colors"
+                placeholder="# Carregando SOUL.md..."
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Conteúdo da Tab: AGENTS.md */}
+      {viewTab === 'agents' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="bg-[#111] border border-white/10 rounded-xl p-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-purple-400" />
+                  <span>AGENTS.md — Especificação da Arquitetura Dual Engine</span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Localização: <code className="text-purple-400 font-mono">/content/drive/MyDrive/AgentNexora/AGENTS.md</code> • Define os papéis de Hermes 3 (Ação) e Qwen 2.5 (Código).
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleCopy('agents_md', agentsContent)}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-neutral-200 border border-white/10 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedId === 'agents_md' ? <Check className="w-3.5 h-3.5 text-purple-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>Copiar</span>
+                </button>
+                <button
+                  onClick={handleSaveAgents}
+                  disabled={savingPromptFile}
+                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-lg shadow-purple-950/40 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingPromptFile ? 'Salvando...' : 'Salvar no Drive & Colab'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3 bg-purple-950/20 border border-purple-500/20 rounded-lg text-[11px] text-purple-300/90 leading-relaxed flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+              <div>
+                <strong>Como editar pelo Kali Linux (VNC):</strong> No desktop gráfico do Kali no navegador, clique duas vezes no atalho <strong>🤖 Editar AGENTS.md</strong> para abrir no <em>Mousepad</em>.
+              </div>
+            </div>
+
+            {loadingPromptFile ? (
+              <div className="py-12 text-center text-xs text-neutral-400 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                <span>Carregando AGENTS.md do ambiente...</span>
+              </div>
+            ) : (
+              <textarea
+                value={agentsContent}
+                onChange={(e) => setAgentsContent(e.target.value)}
+                rows={22}
+                className="w-full bg-black/80 border border-white/10 rounded-xl p-4 font-mono text-xs text-neutral-200 leading-relaxed focus:outline-none focus:border-purple-500/60 transition-colors"
+                placeholder="# Carregando AGENTS.md..."
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Conteúdo da Tab: SECURITY.md */}
+      {viewTab === 'security' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="bg-[#111] border border-white/10 rounded-xl p-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-rose-400" />
+                  <span>SECURITY.md — Privilégios Root, Sandbox Wine & Diretrizes de Execução</span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Localização: <code className="text-rose-400 font-mono">/content/drive/MyDrive/AgentNexora/SECURITY.md</code> • Diretrizes ativas de segurança, proteção de credenciais e modo sem censura.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleCopy('security_md', securityContent)}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-neutral-200 border border-white/10 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedId === 'security_md' ? <Check className="w-3.5 h-3.5 text-rose-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>Copiar</span>
+                </button>
+                <button
+                  onClick={handleSaveSecurity}
+                  disabled={savingPromptFile}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-lg shadow-rose-950/40 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingPromptFile ? 'Salvando...' : 'Salvar no Drive & Colab'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3 bg-rose-950/20 border border-rose-500/20 rounded-lg text-[11px] text-rose-300/90 leading-relaxed flex items-start gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <strong>Como editar pelo Kali Linux (VNC):</strong> No desktop gráfico do Kali no navegador, clique duas vezes no atalho <strong>🔒 Editar SECURITY.md</strong> para abrir no <em>Mousepad</em>. Qualquer regra alterada aqui entra em vigor no próximo comando do agente.
+              </div>
+            </div>
+
+            {loadingPromptFile ? (
+              <div className="py-12 text-center text-xs text-neutral-400 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-rose-400" />
+                <span>Carregando SECURITY.md do ambiente...</span>
+              </div>
+            ) : (
+              <textarea
+                value={securityContent}
+                onChange={(e) => setSecurityContent(e.target.value)}
+                rows={22}
+                className="w-full bg-black/80 border border-white/10 rounded-xl p-4 font-mono text-xs text-neutral-200 leading-relaxed focus:outline-none focus:border-rose-500/60 transition-colors"
+                placeholder="# Carregando SECURITY.md..."
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Conteúdo da Tab: Modelfiles Ollama */}
+      {viewTab === 'modelfiles' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-[#111] border border-white/10 rounded-xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-emerald-400" />
+                  <h4 className="text-sm font-bold text-white">Modelfile.hermes3</h4>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+                  Ollama • 8B
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Arquivo de compilação do modelo no Ollama. Permite redefinir stop tokens, temperatura e contexto (16k).
+              </p>
+              <pre className="p-3 bg-black/80 border border-white/5 rounded-lg text-[11px] font-mono text-neutral-300 whitespace-pre-wrap max-h-72 overflow-y-auto">
+{`FROM hermes3:8b
+
+# Parâmetros de Inferência e Janela de Contexto
+PARAMETER temperature 0.3
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 16384
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+
+SYSTEM """
+Você é o Hermes-Nexora, agente autônomo com acesso root ao ambiente Ubuntu Linux e aceleração de GPU.
+Você pensa com rigor técnico através de tags <scratchpad> e invoca ferramentas de terminal, manipulação de arquivos e sandbox Wine.
+Siga as diretrizes de SOUL.md e AGENTS.md.
+"""`}
+              </pre>
+              <div className="text-[11px] font-mono text-neutral-400 bg-white/5 p-2 rounded">
+                Criar no terminal: <code>ollama create hermes3-nexora -f Modelfile.hermes3</code>
+              </div>
+            </div>
+
+            <div className="bg-[#111] border border-white/10 rounded-xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-purple-400" />
+                  <h4 className="text-sm font-bold text-white">Modelfile.qwen2.5</h4>
+                </div>
+                <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded">
+                  Ollama • 7B
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Configuração do Qwen 2.5 voltada para auditoria de assembly, síntese de decompilação e códigos de alta precisão.
+              </p>
+              <pre className="p-3 bg-black/80 border border-white/5 rounded-lg text-[11px] font-mono text-neutral-300 whitespace-pre-wrap max-h-72 overflow-y-auto">
+{`FROM qwen2.5:7b
+
+# Parâmetros de Inferência para Raciocínio de Código e Engenharia Reversa
+PARAMETER temperature 0.2
+PARAMETER top_p 0.95
+PARAMETER num_ctx 16384
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+
+SYSTEM """
+Você é o Qwen 2.5 Especialista em Código, Engenharia Reversa (REA) e Auditoria de Software do Nexora.
+Analise desmontagens em Assembly x86/x64, decompilações do Ghidra, estruturas de arquivos PE/ELF e crie código limpo e de alta performance.
+"""`}
+              </pre>
+              <div className="text-[11px] font-mono text-neutral-400 bg-white/5 p-2 rounded">
+                Criar no terminal: <code>ollama create qwen2.5-nexora -f Modelfile.qwen2.5</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conteúdo da Tab: Presets de Instruções */}
+      {viewTab === 'presets' && (
+        <div className="space-y-6">
 
       {/* Destaque: Instrução Ativa Atual */}
       {activeInstruction && (
@@ -1719,6 +2238,8 @@ function InstrucoesView({
               </button>
             </div>
           </div>
+        </div>
+      )}
         </div>
       )}
     </div>

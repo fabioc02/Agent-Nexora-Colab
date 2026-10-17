@@ -26,6 +26,13 @@ mkdir -p "$DRIVE_BASE/WindowsApps"
 mkdir -p "$DRIVE_BASE/samples_wav"
 mkdir -p "$DRIVE_BASE/ArquivosPC"
 
+# Sincroniza SOUL.md, AGENTS.md e SECURITY.md para persistência permanente no Google Drive
+for f_prompt in SOUL.md AGENTS.md SECURITY.md Modelfile.hermes3 Modelfile.qwen2.5; do
+    if [ -f "$f_prompt" ] && [ ! -f "$DRIVE_BASE/$f_prompt" ]; then
+        cp -f "$f_prompt" "$DRIVE_BASE/$f_prompt" 2>/dev/null || true
+    fi
+done
+
 # 2. Instala cloudflared se não estiver presente
 if ! command -v cloudflared &>/dev/null; then
     echo "🌐 [1/7] Instalando Cloudflare Tunnel (cloudflared)..."
@@ -34,14 +41,14 @@ if ! command -v cloudflared &>/dev/null; then
     rm -f /tmp/cloudflared.deb
 fi
 
-# 3. Instalação dos Pacotes do Sistema (Xvfb, x11vnc, noVNC, websockify, XFCE4, Wine, REA)
-echo "🐉 [2/7] Instalando Ambiente Gráfico Kali (Xvfb + x11vnc + XFCE), Wine e Áudio..."
+# 3. Instalação dos Pacotes do Sistema (Xvfb, x11vnc, noVNC, websockify, XFCE4, Wine, REA, Mousepad)
+echo "🐉 [2/7] Instalando Ambiente Gráfico Kali (Xvfb + x11vnc + XFCE), Wine, Editores e Áudio..."
 dpkg --add-architecture i386 2>/dev/null || true
 apt-get update -qq || true
 
 apt-get install -y --no-install-recommends \
     xvfb x11vnc novnc websockify dbus-x11 \
-    xfwm4 xfce4-panel xfdesktop4 xfce4-terminal \
+    xfwm4 xfce4-panel xfdesktop4 xfce4-terminal mousepad nano \
     x11-xserver-utils feh thunar zstd net-tools \
     bzip2 libgtk-3-0 libdbus-glib-1-2 \
     wine wine64 winetricks unrar p7zip-full innoextract \
@@ -72,11 +79,66 @@ cat << 'EOF' > /root/Desktop/terminal.desktop
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Terminal Kali
+Name=Terminal Kali Root
 Exec=xfce4-terminal --geometry=110x30
 Icon=utilities-terminal
 Terminal=false
 Categories=System;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_soul.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🧠 Editar SOUL.md (Personalidade)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/SOUL.md
+Icon=text-editor
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_agents.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🤖 Editar AGENTS.md (Dual Engine)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/AGENTS.md
+Icon=system-run
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_security.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🔒 Editar SECURITY.md (Root & Sandbox)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/SECURITY.md
+Icon=security-high
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/drive_nexora.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=📂 Google Drive (Nexora)
+Exec=thunar /content/drive/MyDrive/AgentNexora
+Icon=folder
+Terminal=false
+Categories=System;
+EOF
+
+cat << 'EOF' > /root/Desktop/codigo_agente.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=💻 Repositório (Código Python)
+Exec=thunar /content/Agent-Nexora-Colab
+Icon=system-file-manager
+Terminal=false
+Categories=Development;
 EOF
 
 cat << 'EOF' > /root/Desktop/winecfg.desktop

@@ -1,0 +1,17 @@
+# Modelfile.qwen2.5 — Arquivo de Construção do Modelo Qwen 2.5 no Ollama
+# Você pode compilar um novo modelo executando no terminal:
+#   ollama create qwen2.5-nexora -f Modelfile.qwen2.5
+
+FROM qwen2.5:7b
+
+# Parâmetros de Inferência para Raciocínio de Código e Engenharia Reversa
+PARAMETER temperature 0.2
+PARAMETER top_p 0.95
+PARAMETER num_ctx 16384
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+
+SYSTEM """
+Você é o Qwen 2.5 Especialista em Código, Engenharia Reversa (REA) e Auditoria de Software do Nexora.
+Analise desmontagens em Assembly x86/x64, decompilações do Ghidra, estruturas de arquivos PE/ELF e crie código limpo e de alta performance.
+"""

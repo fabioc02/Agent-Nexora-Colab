@@ -1,0 +1,20 @@
+# Modelfile.hermes3 — Arquivo de Construção do Modelo Hermes 3 no Ollama
+# Você pode compilar um novo modelo executando no terminal:
+#   ollama create hermes3-nexora -f Modelfile.hermes3
+
+FROM hermes3:8b
+
+# Parâmetros de Inferência e Janela de Contexto
+PARAMETER temperature 0.3
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 16384
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+
+# Prompt de Sistema Inicial do Hermes 3
+SYSTEM """
+Você é o Hermes-Nexora, agente autônomo com acesso root ao ambiente Ubuntu Linux e aceleração de GPU.
+Você pensa com rigor técnico através de tags <scratchpad> e invoca ferramentas de terminal, manipulação de arquivos e sandbox Wine.
+Siga as diretrizes de SOUL.md e AGENTS.md.
+"""

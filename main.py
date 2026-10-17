@@ -1019,7 +1019,75 @@ DIRETRIZ EXECUTIVA DE ENGENHARIA REVERSA (REA):
 - Trabalhe sempre com dados e evidências reais extraídas do arquivo. Nunca prometa para o próximo passo o que você pode executar agora.
 """
 
-SYSTEM_PROMPT = PROMPT_BASE_NEXORA + "\n\n" + MODULO_RE_CONDENSADO
+def carregar_soul_prompt():
+    """
+    Carrega dinamicamente o SOUL.md e AGENTS.md se existirem no Google Drive ou no diretório local.
+    Permite que o usuário edite o SOUL.md no Drive ou no Kali Desktop e a IA mude imediatamente!
+    """
+    caminhos_soul = [
+        "/content/drive/MyDrive/AgentNexora/SOUL.md",
+        os.path.join(args.memoria_dir, "..", "SOUL.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SOUL.md"),
+        "./SOUL.md"
+    ]
+    caminhos_agents = [
+        "/content/drive/MyDrive/AgentNexora/AGENTS.md",
+        os.path.join(args.memoria_dir, "..", "AGENTS.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "AGENTS.md"),
+        "./AGENTS.md"
+    ]
+    caminhos_security = [
+        "/content/drive/MyDrive/AgentNexora/SECURITY.md",
+        os.path.join(args.memoria_dir, "..", "SECURITY.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SECURITY.md"),
+        "./SECURITY.md"
+    ]
+    
+    conteudo_soul = ""
+    for p in caminhos_soul:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    conteudo_soul = f.read().strip()
+                if conteudo_soul:
+                    break
+            except Exception:
+                pass
+                
+    conteudo_agents = ""
+    for p in caminhos_agents:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    conteudo_agents = f.read().strip()
+                if conteudo_agents:
+                    break
+            except Exception:
+                pass
+
+    conteudo_security = ""
+    for p in caminhos_security:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    conteudo_security = f.read().strip()
+                if conteudo_security:
+                    break
+            except Exception:
+                pass
+
+    if conteudo_soul:
+        prompt_final = f"{conteudo_soul}\n\n"
+        if conteudo_agents:
+            prompt_final += f"{conteudo_agents}\n\n"
+        if conteudo_security:
+            prompt_final += f"{conteudo_security}\n\n"
+        prompt_final += MODULO_RE_CONDENSADO
+        return prompt_final
+    
+    return PROMPT_BASE_NEXORA + "\n\n" + MODULO_RE_CONDENSADO
+
+SYSTEM_PROMPT = carregar_soul_prompt()
 
 def criar_workspace_re(nome_alvo, arquivo_alvo=None):
     """
@@ -1729,9 +1797,7 @@ def pensar(prompt, historico, contexto="", instrucao=""):
     # Janela deslizante de contexto: envia apenas as últimas 5 mensagens para o Ollama
     max_contexto = 5
     recentes = [m for m in historico if m.get("role") != "system"][-max_contexto:]
-    logs_execucao = []
-    
-    system_content = SYSTEM_PROMPT
+    system_content = carregar_soul_prompt()
 
     # 1. Aplica instrução personalizada ativa ou enviada na requisição
     instrucao_ativa = obter_instrucao_ativa()
@@ -2664,6 +2730,132 @@ def api_delete_instruction(inst_id: str):
         return {"status": "ok", "mensagem": "Instrução excluída com sucesso!", "instrucoes": nova_lista}
     except Exception as e:
         return {"status": "erro", "erro": str(e)}
+
+class TextFileUpdateRequest(BaseModel):
+    conteudo: str
+
+@api_app.get("/api/agent/soul")
+def api_get_soul():
+    caminhos = [
+        "/content/drive/MyDrive/AgentNexora/SOUL.md",
+        os.path.join(args.memoria_dir, "..", "SOUL.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SOUL.md"),
+        "./SOUL.md"
+    ]
+    for p in caminhos:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return {"status": "ok", "path": p, "conteudo": f.read()}
+            except Exception as e:
+                return {"status": "erro", "erro": str(e), "path": p}
+    return {"status": "ok", "path": "./SOUL.md", "conteudo": ""}
+
+@api_app.post("/api/agent/soul")
+def api_save_soul(req: TextFileUpdateRequest):
+    try:
+        conteudo = req.conteudo
+        paths = ["/content/drive/MyDrive/AgentNexora/SOUL.md", "./SOUL.md"]
+        salvos = []
+        for p in paths:
+            try:
+                d = os.path.dirname(p)
+                if d and not os.path.exists(d):
+                    os.makedirs(d, exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(conteudo)
+                salvos.append(p)
+            except Exception:
+                pass
+        return {"status": "ok", "mensagem": "SOUL.md atualizado com sucesso!", "salvos": salvos}
+    except Exception as e:
+        return {"status": "erro", "erro": str(e)}
+
+@api_app.get("/api/agent/agents_spec")
+def api_get_agents_spec():
+    caminhos = [
+        "/content/drive/MyDrive/AgentNexora/AGENTS.md",
+        os.path.join(args.memoria_dir, "..", "AGENTS.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "AGENTS.md"),
+        "./AGENTS.md"
+    ]
+    for p in caminhos:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return {"status": "ok", "path": p, "conteudo": f.read()}
+            except Exception as e:
+                return {"status": "erro", "erro": str(e), "path": p}
+    return {"status": "ok", "path": "./AGENTS.md", "conteudo": ""}
+
+@api_app.post("/api/agent/agents_spec")
+def api_save_agents_spec(req: TextFileUpdateRequest):
+    try:
+        conteudo = req.conteudo
+        paths = ["/content/drive/MyDrive/AgentNexora/AGENTS.md", "./AGENTS.md"]
+        salvos = []
+        for p in paths:
+            try:
+                d = os.path.dirname(p)
+                if d and not os.path.exists(d):
+                    os.makedirs(d, exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(conteudo)
+                salvos.append(p)
+            except Exception:
+                pass
+        return {"status": "ok", "mensagem": "AGENTS.md atualizado com sucesso!", "salvos": salvos}
+    except Exception as e:
+        return {"status": "erro", "erro": str(e)}
+
+@api_app.get("/api/agent/security")
+def api_get_security():
+    caminhos = [
+        "/content/drive/MyDrive/AgentNexora/SECURITY.md",
+        os.path.join(args.memoria_dir, "..", "SECURITY.md"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "SECURITY.md"),
+        "./SECURITY.md"
+    ]
+    for p in caminhos:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return {"status": "ok", "path": p, "conteudo": f.read()}
+            except Exception as e:
+                return {"status": "erro", "erro": str(e), "path": p}
+    return {"status": "ok", "path": "./SECURITY.md", "conteudo": ""}
+
+@api_app.post("/api/agent/security")
+def api_save_security(req: TextFileUpdateRequest):
+    try:
+        conteudo = req.conteudo
+        paths = ["/content/drive/MyDrive/AgentNexora/SECURITY.md", "./SECURITY.md"]
+        salvos = []
+        for p in paths:
+            try:
+                d = os.path.dirname(p)
+                if d and not os.path.exists(d):
+                    os.makedirs(d, exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(conteudo)
+                salvos.append(p)
+            except Exception:
+                pass
+        return {"status": "ok", "mensagem": "SECURITY.md atualizado com sucesso!", "salvos": salvos}
+    except Exception as e:
+        return {"status": "erro", "erro": str(e)}
+
+@api_app.get("/api/agent/modelfiles")
+def api_get_modelfiles():
+    resultado = {}
+    for mf in ["Modelfile.hermes3", "Modelfile.qwen2.5"]:
+        if os.path.exists(mf):
+            try:
+                with open(mf, "r", encoding="utf-8") as f:
+                    resultado[mf] = f.read()
+            except Exception:
+                pass
+    return {"status": "ok", "modelfiles": resultado}
 
 @api_app.post("/api/projects/context")
 def api_save_project_context(req: ProjectContextRequest):

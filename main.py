@@ -865,11 +865,15 @@ def preparar_toolchain(tipo):
         if not os.path.exists("/opt/ghidra/support/analyzeHeadless") and not os.path.exists("/usr/local/bin/analyzeHeadless"):
             logs.append("⚡ [Ghidra] Baixando e instalando Ghidra Headless (NSA)...")
             cmd_ghidra = """
-            apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless unzip wget >/dev/null 2>&1
+            apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless unzip wget curl >/dev/null 2>&1
             mkdir -p /opt && cd /tmp
-            wget -q "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.2.1_build/ghidra_11.2.1_PUBLIC_20241024.zip" -O /tmp/ghidra.zip
+            GH_URL=$(curl -s https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest | grep -o 'https://github.com/[^"]*PUBLIC[^"]*\\.zip' | head -n 1)
+            if [ -z "$GH_URL" ]; then
+                GH_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip"
+            fi
+            curl -sSL "$GH_URL" -o /tmp/ghidra.zip
             if [ -f /tmp/ghidra.zip ]; then
-                unzip -q /tmp/ghidra.zip -d /opt/
+                unzip -q -o /tmp/ghidra.zip -d /opt/
                 mv /opt/ghidra_* /opt/ghidra 2>/dev/null || true
                 chmod +x /opt/ghidra/support/analyzeHeadless 2>/dev/null || true
                 ln -sf /opt/ghidra/support/analyzeHeadless /usr/local/bin/analyzeHeadless 2>/dev/null || true
@@ -883,6 +887,19 @@ def preparar_toolchain(tipo):
                 logs.append("⚠️ Falha ao baixar Ghidra automaticamente do GitHub.")
         else:
             logs.append("✓ Ghidra Headless já está disponível em `/opt/ghidra/support/analyzeHeadless`.")
+
+        # Verifica se Radare2 (r2) está instalado
+        if not subprocess.getoutput("which r2 2>/dev/null").strip():
+            logs.append("⚡ [Radare2] Instalando r2 via apt...")
+            subprocess.getoutput("apt-get update -qq && apt-get install -y -qq radare2")
+            if not subprocess.getoutput("which r2 2>/dev/null").strip():
+                cmd_r2_deb = """
+                R2_URL=$(curl -s https://api.github.com/repos/radareorg/radare2/releases/latest | grep -o 'https://github.com/[^"]*radare2_[0-9.]*_amd64\\.deb' | head -n 1)
+                if [ -n "$R2_URL" ]; then
+                    curl -sSL "$R2_URL" -o /tmp/radare2.deb && dpkg -i /tmp/radare2.deb && rm -f /tmp/radare2.deb || true
+                fi
+                """
+                subprocess.getoutput(f"bash -c {json.dumps(cmd_r2_deb)}")
 
     return "\n".join(logs)
 

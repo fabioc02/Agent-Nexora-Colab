@@ -2435,15 +2435,37 @@ function ChatView({
       setConnectionStatus('connected');
     } catch (error: any) {
       clearTimeout(timeoutId);
-      setConnectionStatus('error');
       const isTimeout = error.name === 'AbortError';
-      let msgErro = `[Erro de Comunicação] Não foi possível contatar o Colab. Verifique se a célula do Cloudflare ainda está ativa no Colab. Detalhes: ${error.message || error}`;
-      if (isTimeout) {
-        msgErro = '[Tempo Limite Excedido] A compilação ou geração demorou mais que o esperado. O histórico pode ter ficado extenso. Clique em "Limpar Chat" para resetar a memória rápida e verifique os arquivos gerados no Drive!';
-      } else if (error.message?.includes('NetworkError') || error.message?.includes('Failed to fetch')) {
-        msgErro = `[Túnel Desconectado ou Nova URL Gerada] Não foi possível contatar o Colab. Verifique se a célula do Colab continua rodando no navegador e se a URL do Cloudflare no topo da página corresponde à URL impressa na célula do Colab (cada execução do Colab gera um link novo).`;
+
+      // Verifica se o Colab continua online (evita falso alarme de desconexão por timeout de 100s do Cloudflare)
+      let isStillOnline = false;
+      try {
+        const cleanUrl = colabUrl.trim().replace(/\/$/, '');
+        const checkHealth = await fetch(`${cleanUrl}/api/health`, { signal: AbortSignal.timeout(4000) });
+        if (checkHealth.ok) {
+          const hData = await checkHealth.json();
+          if (hData.status === 'online') isStillOnline = true;
+        }
+      } catch {}
+
+      if (isStillOnline) {
+        setConnectionStatus('connected');
+        const msgColabAtivo = '⚡ **[Processando no Colab — Túnel Ativo]**\n\n' +
+          'A tarefa (como download de bibliotecas com `apt`, compilação ou execução de comandos longos) excedeu a janela de resposta imediata do Cloudflare (~100s), mas o **Google Colab continua 100% online e executando em segundo plano**!\n\n' +
+          '💡 **O que fazer:**\n' +
+          '1. Acesse a aba **Terminal** para ver a saída dos comandos em tempo real.\n' +
+          '2. Para tarefas pesadas sem nenhum limite de tempo, use o **IP do Tailscale** (`100.x.y.z:5000`) em vez da URL temporária do Cloudflare.';
+        setMessages(prev => [...prev, { role: 'assistant', content: msgColabAtivo }]);
+      } else {
+        setConnectionStatus('error');
+        let msgErro = `[Erro de Comunicação] Não foi possível contatar o Colab. Detalhes: ${error.message || error}`;
+        if (isTimeout) {
+          msgErro = '[Tempo Limite Excedido] A compilação ou geração demorou mais que o esperado. O histórico pode ter ficado extenso. Clique em "Limpar Chat" para resetar a memória rápida e verifique os arquivos gerados no Drive!';
+        } else if (error.message?.includes('NetworkError') || error.message?.includes('Failed to fetch')) {
+          msgErro = `[Túnel Desconectado ou Nova URL Gerada] Não foi possível contatar o Colab. Verifique se a célula do Colab continua rodando no navegador e se a URL do Cloudflare no topo da página corresponde à URL impressa na célula do Colab (cada execução do Colab gera um link novo).`;
+        }
+        setMessages(prev => [...prev, { role: 'assistant', content: msgErro }]);
       }
-      setMessages(prev => [...prev, { role: 'assistant', content: msgErro }]);
     } finally {
       setLoading(false);
     }

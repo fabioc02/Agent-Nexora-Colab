@@ -52,7 +52,7 @@ apt-get install -y --no-install-recommends \
     x11-xserver-utils feh thunar zstd net-tools \
     bzip2 libgtk-3-0 libdbus-glib-1-2 \
     wine wine64 winetricks unrar p7zip-full innoextract \
-    binutils file xxd bsdextrautils bsdmainutils ent \
+    radare2 binutils file xxd bsdextrautils bsdmainutils ent \
     curl wget git python3-pip python3-dev build-essential > /dev/null 2>&1 || true
 
 # 3.0 Instalação do Firefox Oficial para Linux x86_64 no Desktop do Kali
@@ -356,6 +356,35 @@ else
     echo "ℹ️ [INFO] Tailscale não configurado (opcional). Usando túneis Cloudflare 100% automáticos (sem necessidade de token)!"
 fi
 
+# Salva as URLs ativas no Google Drive para reconexão instantânea
+if [ -n "$cf_url" ]; then
+    echo "$cf_url" > "$DRIVE_BASE/colab_url.txt"
+fi
+if [ -n "$vnc_url" ]; then
+    echo "$vnc_url" > "$DRIVE_BASE/vnc_url.txt"
+fi
+
+# Watchdog do Túnel Cloudflare para reconectar automaticamente se a conexão oscilar
+cat << 'EOF' > /tmp/keepalive_tunnel.sh
+#!/bin/bash
+DRIVE_DIR="/content/drive/MyDrive/AgentNexora"
+while true; do
+    sleep 20
+    if ! pgrep -f "cloudflared.*5000" >/dev/null; then
+        echo "[Watchdog] Reiniciando túnel Cloudflare da API..." >> /tmp/tunnel_watchdog.log
+        cloudflared tunnel --url http://localhost:5000 > /tmp/cloudflared.log 2>&1 &
+        sleep 6
+        new_cf=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' /tmp/cloudflared.log | tail -n 1 || echo "")
+        if [ -n "$new_cf" ]; then
+            echo "$new_cf" > "$DRIVE_DIR/colab_url.txt"
+            echo "Nova URL do Colab registrada no Drive: $new_cf" >> /tmp/tunnel_watchdog.log
+        fi
+    fi
+done
+EOF
+chmod +x /tmp/keepalive_tunnel.sh
+/bin/bash /tmp/keepalive_tunnel.sh >/dev/null 2>&1 &
+
 echo ""
 echo "=========================================================================="
 echo "🐉 ECOSSISTEMA NEXORA + KALI DESKTOP ONLINE! (HERMES 3 & QWEN 2.5 NA GPU L4)"
@@ -368,6 +397,7 @@ if [ -n "$cf_url" ]; then
     echo "--------------------------------------------------------------------------"
     echo "☁️ SERVIDOR 1 (COLAB API - COLE NA INTERFACE WEB):"
     echo "👉 $cf_url 👈"
+    echo "💾 Salvo no Drive: /content/drive/MyDrive/AgentNexora/colab_url.txt"
 fi
 if [ -n "$ts_ip" ]; then
     echo "--------------------------------------------------------------------------"

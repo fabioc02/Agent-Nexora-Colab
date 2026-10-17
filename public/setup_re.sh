@@ -59,13 +59,16 @@ if [ -f /opt/rea/bin/rea ]; then
     ln -sf /opt/rea/bin/rea /usr/local/bin/rea 2>/dev/null || true
 fi
 
-# 6. Ghidra — Baixar e configurar analyzeHeadless
-if [ ! -d /opt/ghidra ]; then
-    GHIDRA_VER="11.2.1"
-    GHIDRA_DATE="20241024"
+# 6. Ghidra — Baixar e configurar analyzeHeadless oficial NSA
+if [ ! -f /usr/local/bin/analyzeHeadless ] && [ ! -d /opt/ghidra ]; then
+    echo "⚡ [Ghidra] Baixando release oficial Ghidra NSA..."
+    GHIDRA_URL=$(curl -s https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest | grep -o 'https://github.com/[^"]*PUBLIC[^"]*\.zip' | head -n 1)
+    if [ -z "$GHIDRA_URL" ]; then
+        GHIDRA_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip"
+    fi
     mkdir -p /opt
-    if wget -q "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VER}_build/ghidra_${GHIDRA_VER}_PUBLIC_${GHIDRA_DATE}.zip" -O /tmp/ghidra.zip; then
-        unzip -q /tmp/ghidra.zip -d /opt/
+    if curl -sSL "$GHIDRA_URL" -o /tmp/ghidra.zip; then
+        unzip -q -o /tmp/ghidra.zip -d /opt/
         mv /opt/ghidra_* /opt/ghidra 2>/dev/null || true
         chmod +x /opt/ghidra/support/analyzeHeadless 2>/dev/null || true
         rm -f /tmp/ghidra.zip
@@ -76,14 +79,16 @@ if [ -d /opt/ghidra/support ]; then
     ln -sf /opt/ghidra/support/analyzeHeadless /usr/local/bin/analyzeHeadless 2>/dev/null || true
 fi
 
-# 7. radare2 — compilar do GitHub (se não estiver instalado)
+# 7. radare2 (r2) — Instalação rápida via apt ou pacote deb pré-compilado oficial
 if ! command -v r2 &>/dev/null; then
-    if [ ! -d /tmp/r2 ]; then
-        git clone -q --depth 1 https://github.com/radareorg/radare2 /tmp/r2 || true
-    fi
-    if [ -d /tmp/r2 ]; then
-        cd /tmp/r2 && sys/install.sh >/dev/null 2>&1 || true
-        cd - >/dev/null
+    echo "⚡ [Radare2] Instalando r2 via apt..."
+    apt-get update -qq && apt-get install -y -qq radare2 || true
+fi
+if ! command -v r2 &>/dev/null; then
+    echo "⚡ [Radare2] Baixando pacote .deb oficial..."
+    R2_DEB_URL=$(curl -s https://api.github.com/repos/radareorg/radare2/releases/latest | grep -o 'https://github.com/[^"]*radare2_[0-9.]*_amd64\.deb' | head -n 1)
+    if [ -n "$R2_DEB_URL" ]; then
+        curl -sSL "$R2_DEB_URL" -o /tmp/radare2.deb && dpkg -i /tmp/radare2.deb && rm -f /tmp/radare2.deb || true
     fi
 fi
 

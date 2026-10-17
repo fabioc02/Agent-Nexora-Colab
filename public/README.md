@@ -73,9 +73,9 @@ else:
     os.chdir("/content/Agent-Nexora-Colab")
 
 # ------------------------------------------------------------------------------
-# 4. INSTALAÇÃO DO AMBIENTE WINE, ÁUDIO, XFCE E REPOSITÓRIO KALI LINUX
+# 4. INSTALAÇÃO DO AMBIENTE GRÁFICO KALI, WINE, ÁUDIO E UTILITÁRIOS
 # ------------------------------------------------------------------------------
-print("\n🐉 [4/7] Instalando Ambiente Gráfico, Kali Repo, Wine Multiarch e Áudio...")
+print("\n🐉 [4/7] Instalando Ambiente Gráfico (Xvfb + x11vnc + XFCE), Wine e Áudio...")
 os.environ["DEBIAN_FRONTEND"] = "noninteractive"
 os.environ["USER"] = "root"
 os.environ["HOME"] = "/root"
@@ -83,78 +83,118 @@ os.environ["HOME"] = "/root"
 run_bash("dpkg --add-architecture i386 2>/dev/null || true")
 run_bash("apt-get update -qq")
 
-# Configura repositório oficial do Kali Linux com pin de segurança (não sobrescreve pacotes base)
-run_bash("""
-curl -fsSL https://archive.kali.org/archive-key.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/kali-archive-keyring.gpg 2>/dev/null || true
-echo "deb [signed-by=/etc/apt/trusted.gpg.d/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list.d/kali.list
-cat << 'KALI_EOF' > /etc/apt/preferences.d/kali.pref
-Package: *
-Pin: release o=Kali
-Pin-Priority: 50
-KALI_EOF
-apt-get update -qq 2>/dev/null || true
-""")
-
 run_bash("""
 apt-get install -y --no-install-recommends \
-    xfce4 xfce4-goodies xfce4-terminal tightvncserver novnc websockify \
-    dbus-x11 x11-xserver-utils \
-    wine wine64 winetricks xvfb xauth libx11-6 \
-    p7zip-full innoextract icoutils cabextract unrar \
-    binutils file xxd bsdextrautils bsdmainutils ent zstd \
-    build-essential cmake python3-pip python3-dev \
-    openjdk-17-jdk-headless alsa-utils libasound2-plugins jackd2 > /dev/null 2>&1
+    xvfb x11vnc novnc websockify dbus-x11 \
+    xfwm4 xfce4-panel xfdesktop4 xfce4-terminal \
+    x11-xserver-utils feh thunar zstd net-tools \
+    bzip2 libgtk-3-0 libdbus-glib-1-2 \
+    wine wine64 winetricks unrar p7zip-full innoextract \
+    binutils file xxd bsdextrautils bsdmainutils ent \
+    curl wget git python3-pip python3-dev build-essential > /dev/null 2>&1
 """)
 
 # Cria o wrapper wine-headless para evitar travamentos de display
 with open('/usr/local/bin/wine-headless', 'w') as f:
-    f.write("""#!/usr/bin/env bash
-if [ -z "$DISPLAY" ]; then
-    exec xvfb-run -a wine "$@"
-else
-    exec wine "$@"
-fi
-""")
+    f.write("#!/usr/bin/env bash\nif [ -z \"$DISPLAY\" ]; then exec xvfb-run -a wine \"$@\"; else exec wine \"$@\"; fi\n")
 run_bash("chmod +x /usr/local/bin/wine-headless")
 
-# ------------------------------------------------------------------------------
-# 4.1. INICIALIZAÇÃO DO AMBIENTE GRÁFICO XFCE + VNC + NoVNC (ACESSO WEB)
-# ------------------------------------------------------------------------------
-print("\n🖥️ [4.1/7] Subindo Ambiente Gráfico Desktop (XFCE + Kali + VNC + NoVNC)...")
+# 4.1. Papel de parede oficial do Kali Dragon e atalhos de Desktop
 run_bash("""
-export USER=root
-export HOME=/root
+mkdir -p /usr/share/backgrounds
+wget -q "https://gitlab.com/kalilinux/packages/kali-wallpapers/-/raw/kali/master/backgrounds/kali-16x9/default.png" -O /usr/share/backgrounds/kali.png 2>/dev/null || true
 
-# Limpeza completa de travas anteriores do X11 e VNC
-vncserver -kill :1 2>/dev/null || true
-pkill -9 -f "Xtightvnc|Xvnc|websockify" 2>/dev/null || true
-rm -rf /tmp/.X11-unix/X1 /tmp/.X1-lock /tmp/.X5901-lock 2>/dev/null || true
+mkdir -p /root/Desktop /usr/share/applications
 
-mkdir -p /root/.vnc
-echo "nexora123" | vncpasswd -f > /root/.vnc/passwd
-chmod 600 /root/.vnc/passwd
-
-cat << 'EOF' > /root/.vnc/xstartup
-#!/bin/bash
-unset SESSION_MANAGER
-unset DBUS_SESSION_BUS_ADDRESS
-export USER=root
-export HOME=/root
-[ -r /root/.Xresources ] && xrdb /root/.Xresources
-xsetroot -solid "#1a1b26"
-vncconfig -iconic &
-dbus-launch --exit-with-session startxfce4 &
+cat << 'EOF' > /root/Desktop/terminal.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Terminal Kali
+Exec=xfce4-terminal --geometry=110x30
+Icon=utilities-terminal
+Terminal=false
+Categories=System;
 EOF
-chmod +x /root/.vnc/xstartup
 
-USER=root vncserver :1 -geometry 1366x768 -depth 24
+cat << 'EOF' > /root/Desktop/winecfg.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Configurar Wine
+Exec=winecfg
+Icon=wine
+Terminal=false
+Categories=Settings;
+EOF
 
-# Garante que o NoVNC Web esteja pronto
-ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
+cat << 'EOF' > /root/Desktop/rea_assistant.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=REA Assistant (morluto/rea)
+Exec=xfce4-terminal -e "rea doctor"
+Icon=system-search
+Terminal=false
+Categories=Development;
+EOF
 
-# Sobe o proxy Websocket para VNC na porta 6080
-pkill -f "websockify" 2>/dev/null || true
-websockify -D --web=/usr/share/novnc/ 6080 localhost:5901 > /tmp/websockify.log 2>&1
+chmod +x /root/Desktop/*.desktop 2>/dev/null || true
+""")
+
+# ------------------------------------------------------------------------------
+# 4.2. INICIALIZAÇÃO DO DISPLAY VIRTUAL X11 & SESSÃO GRÁFICA KALI (Xvfb + x11vnc)
+# ------------------------------------------------------------------------------
+print("\n🖥️ [4.2/7] Subindo Desktop Gráfico do Kali Linux (Xvfb + x11vnc + NoVNC)...")
+run_bash("""
+pkill -9 -f "Xvfb" || true
+pkill -9 -f "x11vnc" || true
+pkill -9 -f "websockify" || true
+pkill -9 -f "cloudflared.*6080" || true
+rm -rf /tmp/.X11-unix/X1 /tmp/.X1-lock /tmp/.X5900-lock 2>/dev/null || true
+
+export DISPLAY=":1"
+export XDG_RUNTIME_DIR="/tmp/runtime-root"
+mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
+
+# Display virtual HD 1280x720
+Xvfb :1 -screen 0 1280x720x24 > /dev/null 2>&1 &
+sleep 2
+
+# Script de inicialização da sessão XFCE
+cat << 'EOF' > /tmp/start_kali.sh
+#!/bin/bash
+export DISPLAY=:1
+export XDG_RUNTIME_DIR=/tmp/runtime-root
+eval $(dbus-launch --sh-syntax)
+
+feh --bg-fill /usr/share/backgrounds/kali.png 2>/dev/null || xsetroot -solid "#0f172a"
+
+xfwm4 &
+xfce4-panel &
+xfdesktop &
+
+sleep 2
+xfce4-terminal --geometry=100x28+140+70 --title="🐉 Kali Linux Terminal - Nexora Colab" &
+EOF
+chmod +x /tmp/start_kali.sh
+/bin/bash /tmp/start_kali.sh > /dev/null 2>&1 &
+sleep 2
+
+# Servidor VNC (porta 5900) e NoVNC Web (porta 6080)
+x11vnc -display :1 -nopw -listen localhost -forever -shared -rfbport 5900 > /tmp/x11vnc.log 2>&1 &
+sleep 1
+
+NOVNC_DIR="/usr/share/novnc"
+if [ ! -d "$NOVNC_DIR" ]; then
+    git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc 2>/dev/null || true
+    NOVNC_DIR="/opt/novnc"
+fi
+ln -sf "$NOVNC_DIR/vnc.html" "$NOVNC_DIR/index.html" 2>/dev/null || true
+websockify -D --web="$NOVNC_DIR" 6080 localhost:5900 > /tmp/websockify.log 2>&1
+
+# Túnel Cloudflare para o NoVNC na porta 6080
+cloudflared tunnel --url http://localhost:6080 > /tmp/novnc_cf.log 2>&1 &
 """)
 
 # ------------------------------------------------------------------------------
@@ -162,36 +202,32 @@ websockify -D --web=/usr/share/novnc/ 6080 localhost:5901 > /tmp/websockify.log 
 # ------------------------------------------------------------------------------
 print("\n🔬 [5/7] Configurando Toolchain REA (morluto/rea), Ghidra e Decompiladores...")
 
-run_bash("pip install -q --upgrade pip")
 run_bash("""
 pip install -q \
-    fastapi uvicorn pydantic requests pysocks pyngrok \
-    pefile capstone lief construct kaitaistruct \
-    pyelftools r2pipe frida-tools mido pretty_midi python-rtmidi 2>/dev/null
-""")
+    fastapi uvicorn pydantic requests \
+    pefile capstone lief construct mido soundfile numpy scipy 2>/dev/null
 
-# Instala Node.js 22 e REA CLI de forma limpa
-run_bash("""
 if ! command -v node &>/dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1
-    apt-get install -y -qq nodejs >/dev/null 2>&1
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1 || true
+    apt-get install -y -qq nodejs >/dev/null 2>&1 || true
 fi
+
 if command -v npm &>/dev/null; then
     npm install --global rea-agents >/dev/null 2>&1 || true
 fi
+
 if [ ! -d /opt/rea ]; then
     git clone -q --depth 1 https://github.com/morluto/rea.git /opt/rea 2>/dev/null || true
-    [ -f /opt/rea/bin/rea ] && ln -sf /opt/rea/bin/rea /usr/local/bin/rea 2>/dev/null || true
+    if [ -f /opt/rea/bin/rea ]; then
+        ln -sf /opt/rea/bin/rea /usr/local/bin/rea 2>/dev/null || true
+    fi
 fi
 """)
-
-if os.path.exists("setup_re.sh"):
-    run_bash("bash setup_re.sh > /dev/null 2>&1 || true")
 
 # ------------------------------------------------------------------------------
 # 6. INSTALAÇÃO & INICIALIZAÇÃO DO OLLAMA COM ACELERAÇÃO CUDA NA GPU L4
 # ------------------------------------------------------------------------------
-print("\n🧠 [6/7] Inicializando Ollama (GPU L4) e baixando modelos...")
+print("\n🧠 [6/7] Inicializando Ollama (GPU L4) e carregando modelos...")
 run_bash("""
 if ! command -v ollama &>/dev/null; then
     curl -fsSL https://ollama.com/download/ollama-linux-amd64.tar.zst | zstd -d | tar -xf - -C /usr/local
@@ -202,7 +238,7 @@ fi
 run_bash("pkill -f 'ollama serve' || true")
 subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-for _ in range(15):
+for _ in range(25):
     if subprocess.getoutput("curl -s http://localhost:11434/api/version"):
         break
     time.sleep(1)
@@ -212,54 +248,24 @@ run_bash("ollama pull hermes3:8b")
 run_bash("ollama pull qwen2.5:7b")
 
 # ------------------------------------------------------------------------------
-# 7. REDE & SERVIDORES ANTI-TIMEOUT: CLOUDFLARE + TAILSCALE (WIREGUARD) + NEXORA API
+# 7. REDE & SERVIDORES: CLOUDFLARE + NEXORA API
 # ------------------------------------------------------------------------------
-print("\n🛡️ [7/7] Subindo servidores sem timeout e túnel HTTPS...")
+print("\n🛡️ [7/7] Subindo conexões e Servidor API do Nexora...")
 
-# 7.1. Túneis Cloudflare (API na porta 5000 e Desktop NoVNC na porta 6080)
-run_bash("""
-if ! command -v cloudflared &>/dev/null; then
-    curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
-    dpkg -i /tmp/cloudflared.deb || apt-get install -f -y > /dev/null 2>&1
-    rm -f /tmp/cloudflared.deb
-fi
-""")
-# Encerra túneis anteriores de forma limpa antes de subir os dois túneis simultâneos
-run_bash("pkill -f 'cloudflared' || true")
-time.sleep(1)
-
-# Inicia o túnel da API (porta 5000)
+# Túnel Cloudflare para a API na porta 5000
+run_bash("pkill -f 'cloudflared.*5000' || true")
 subprocess.Popen("cloudflared tunnel --url http://localhost:5000 > /tmp/cloudflared.log 2>&1", shell=True)
 
-# Inicia o túnel do Desktop NoVNC (porta 6080)
-subprocess.Popen("cloudflared tunnel --url http://localhost:6080 > /tmp/cloudflared_vnc.log 2>&1", shell=True)
-
-# 7.2. Tailscale P2P WireGuard (Zero Timeouts com Kali Linux)
-ts_auth = TAILSCALE_AUTHKEY.strip()
-if ts_auth:
-    print("-> Inicializando Tailscale WireGuard P2P (modo rápido)...")
-    run_bash("if ! command -v tailscale &>/dev/null; then curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true; fi")
-    run_bash("mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true && chmod 600 /dev/net/tun 2>/dev/null || true")
-    run_bash("pkill -f 'tailscaled' || true")
-    subprocess.Popen(
-        "tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 > /tmp/tailscaled.log 2>&1",
-        shell=True
-    )
-    time.sleep(2)
-    # Autentica com timeout estrito de 10s para NUNCA travar se a chave for single-use ou expirar
-    run_bash(f'timeout 12 tailscale up --authkey="{ts_auth}" --reset --timeout=10s --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true')
-    run_bash("(timeout 3 tailscale serve --bg --yes 5000 > /tmp/ts_serve.log 2>&1 || true) &")
-
-# Aguarda URLs dos Túneis Cloudflare (API Web + Desktop NoVNC)
+# Aguarda URLs dos dois túneis (API Web + Desktop NoVNC)
 cf_url = ""
 vnc_cf_url = ""
-for _ in range(15):
+for _ in range(25):
     if not cf_url and os.path.exists("/tmp/cloudflared.log"):
         txt = open("/tmp/cloudflared.log").read()
         m = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', txt)
         if m: cf_url = m.group(0)
-    if not vnc_cf_url and os.path.exists("/tmp/cloudflared_vnc.log"):
-        txt_v = open("/tmp/cloudflared_vnc.log").read()
+    if not vnc_cf_url and os.path.exists("/tmp/novnc_cf.log"):
+        txt_v = open("/tmp/novnc_cf.log").read()
         m_v = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', txt_v)
         if m_v: vnc_cf_url = f"{m_v.group(0)}/vnc.html?autoconnect=true"
     if cf_url and vnc_cf_url:

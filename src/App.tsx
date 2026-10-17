@@ -3787,7 +3787,10 @@ function ConfigView({
     setTestResult(null);
     const start = performance.now();
     try {
-      const cleanUrl = colabUrl.trim().replace(/\/$/, '');
+      const cleanUrl = normalizeUrl(colabUrl);
+      if (cleanUrl !== colabUrl) {
+        onUrlChange(cleanUrl);
+      }
       if (typeof window !== 'undefined' && window.location.protocol === 'https:' && cleanUrl.startsWith('http://')) {
         setTestResult(`⚠️ Bloqueio de Segurança do Navegador (Mixed Content): Você está acessando a Web via HTTPS seguro. Navegadores bloqueiam chamadas para '${cleanUrl}'. Para conectar aqui no navegador, use a URL pública Cloudflare gerada no Colab (ex: https://xxxx.trycloudflare.com). Se quiser usar o Tailscale direto (http://...), acesse a interface localmente em http://localhost:3000.`);
         setIsTesting(false);
@@ -3798,7 +3801,7 @@ function ConfigView({
       if (res.ok) {
         const data = await res.json();
         setTestResult(`✓ Servidor 1 (Colab) Online (${latency}ms) | GPU: ${data.gpu?.split(',')[0] || 'L4'} | Modelo: ${data.modelo}`);
-        if (data.bridge_url) setBridgeUrlInput(data.bridge_url);
+        if (data.bridge_url) setBridgeUrlInput(normalizeUrl(data.bridge_url));
       } else {
         const resHealth = await fetch(`${cleanUrl}/api/health`);
         if (resHealth.ok) {
@@ -3825,6 +3828,9 @@ function ConfigView({
     try {
       const cleanUrl = normalizeUrl(colabUrl);
       const cleanBridge = normalizeUrl(bridgeUrlInput);
+      if (cleanUrl !== colabUrl) onUrlChange(cleanUrl);
+      if (cleanBridge !== bridgeUrlInput) setBridgeUrlInput(cleanBridge);
+
       const res = await fetch(`${cleanUrl}/api/bridge/set_url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4095,7 +4101,17 @@ function ConfigView({
                 type="text" 
                 value={colabUrl}
                 onChange={(e) => onUrlChange(e.target.value)}
-                placeholder="ex: https://cyber-wanting-hawaii-sox.trycloudflare.com"
+                onBlur={() => {
+                  if (colabUrl.trim()) onUrlChange(normalizeUrl(colabUrl));
+                }}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData('text');
+                  if (pasted) {
+                    e.preventDefault();
+                    onUrlChange(normalizeUrl(pasted));
+                  }
+                }}
+                placeholder="ex: https://sides-happening-recruiting-action.trycloudflare.com"
                 className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
               />
               <div className="pt-2 flex flex-wrap items-center gap-1.5">
@@ -4174,6 +4190,16 @@ function ConfigView({
                 type="text" 
                 value={bridgeUrlInput}
                 onChange={(e) => setBridgeUrlInput(e.target.value)}
+                onBlur={() => {
+                  if (bridgeUrlInput.trim()) setBridgeUrlInput(normalizeUrl(bridgeUrlInput));
+                }}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData('text');
+                  if (pasted) {
+                    e.preventDefault();
+                    setBridgeUrlInput(normalizeUrl(pasted));
+                  }
+                }}
                 placeholder="ex: http://100.110.44.53:8000 ou https://xxx.trycloudflare.com"
                 className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
               />

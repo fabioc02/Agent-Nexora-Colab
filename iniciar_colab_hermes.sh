@@ -228,6 +228,17 @@ for i in {1..25}; do
     sleep 1
 done
 
+if [ -z "$vnc_url" ]; then
+    cloudflared tunnel --url http://localhost:6080 > /tmp/novnc_cf.log 2>&1 &
+    for i in {1..15}; do
+        if [ -f /tmp/novnc_cf.log ]; then
+            m_vnc=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' /tmp/novnc_cf.log | head -n 1 || echo "")
+            if [ -n "$m_vnc" ]; then vnc_url="${m_vnc}/vnc.html?autoconnect=true"; break; fi
+        fi
+        sleep 1
+    done
+fi
+
 # Permite passar TAILSCALE_AUTHKEY via variável de ambiente ou 2º argumento
 TAILSCALE_AUTHKEY="${TAILSCALE_AUTHKEY:-$2}"
 ts_ip=""

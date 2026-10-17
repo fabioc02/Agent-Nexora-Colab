@@ -1509,7 +1509,10 @@ def executar_comando_inteligente(comando: str, source: str = "hermes_agent") -> 
             })
             return res_final, True
 
-    # 3. Execução no terminal bash no diretório CURRENT_CWD com timeout
+    # 3. Execução no terminal bash no diretório CURRENT_CWD com timeout e DISPLAY=:1 para o Kali VNC
+    env_sub = os.environ.copy()
+    if "DISPLAY" not in env_sub:
+        env_sub["DISPLAY"] = ":1"
     try:
         proc = subprocess.run(
             cmd_limpo,
@@ -1518,7 +1521,8 @@ def executar_comando_inteligente(comando: str, source: str = "hermes_agent") -> 
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=180
+            timeout=180,
+            env=env_sub
         )
         saida = proc.stdout
     except subprocess.TimeoutExpired:

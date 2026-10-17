@@ -69,6 +69,7 @@ Em seguida, execute diretamente a ação via ferramentas Hermes:
 3. **Automação Linux & Redes**:
    - Túneis Cloudflare e malhas privadas Tailscale P2P WireGuard sem limites de timeout.
    - Gerenciamento de processos, GPU CUDA com Torch e Ollama.
+   - Instalação de softwares do ecossistema Desktop (ex: Firefox): use pacotes oficiais pré-compilados (`/opt/firefox/`) ou `apt-get`, e crie atalhos na Área de Trabalho (`/root/Desktop/`). NUNCA tente compilar navegadores do código-fonte nem baixar `.exe` do Windows para o Linux nativo.
 
 ---
 

@@ -55,6 +55,17 @@ apt-get install -y --no-install-recommends \
     binutils file xxd bsdextrautils bsdmainutils ent \
     curl wget git python3-pip python3-dev build-essential > /dev/null 2>&1 || true
 
+# 3.0 Instalação do Firefox Oficial para Linux x86_64 no Desktop do Kali
+if ! command -v firefox &>/dev/null; then
+    echo "🦊 [Firefox] Baixando Firefox Oficial para o Desktop..."
+    wget -q "https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=pt-BR" -O /tmp/firefox.tar.bz2 2>/dev/null || true
+    if [ -f /tmp/firefox.tar.bz2 ]; then
+        tar -xjf /tmp/firefox.tar.bz2 -C /opt/ 2>/dev/null || true
+        ln -sf /opt/firefox/firefox /usr/local/bin/firefox 2>/dev/null || true
+        rm -f /tmp/firefox.tar.bz2 2>/dev/null || true
+    fi
+fi
+
 # Cria o wrapper wine-headless
 cat << 'EOF' > /usr/local/bin/wine-headless
 #!/usr/bin/env bash
@@ -74,6 +85,17 @@ fi
 
 # 3.2 Criação dos Atalhos na Área de Trabalho do Kali
 mkdir -p /root/Desktop /usr/share/applications
+
+cat << 'EOF' > /root/Desktop/firefox.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🌐 Firefox Web Browser
+Exec=firefox %u
+Icon=firefox
+Terminal=false
+Categories=Network;WebBrowser;
+EOF
 
 cat << 'EOF' > /root/Desktop/terminal.desktop
 [Desktop Entry]

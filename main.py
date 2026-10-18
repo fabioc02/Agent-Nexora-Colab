@@ -1660,39 +1660,61 @@ def eh_conversa_ou_pergunta(p: str) -> bool:
         return True
     return False
 
+def contem_promessa_passiva(texto: str) -> bool:
+    t = texto.lower()
+    frases_promessa = [
+        "vou analisar", "continuarei a", "estou avançando para",
+        "aguarde mais notícias", "em breve teremos", "continuo com a engenharia",
+        "planejo testar", "vou continuar o processo", "atenciosamente,",
+        "hermes-nexora (em análise)", "aguarde o progresso", "estou preparado para fornecer orientação",
+        "já completei os seguintes passos"
+    ]
+    return any(fp in t for fp in frases_promessa)
+
 def validar_resposta(resposta: str, prompt_original: str = "") -> tuple[bool, str]:
-    """Retorna (valida, motivo_rejeicao). Respeita o modo sem censura e conversação natural."""
-    # Se o modo sem censura estiver ativado, só evita repetição infinita do mesmo texto
+    """Retorna (valida, motivo_rejeicao). Garante que ordens de ação técnica executem ferramentas reais."""
+    if esta_repetindo(resposta):
+        return False, "repeticao"
+
+    palavras_acao = [
+        'compile', 'compilar', 'crie', 'criar', 'construa', 'instale',
+        'execute', 'rode', 'salve', 'baixe', 'analise', 'analisar',
+        'descompile', 'descompilar', 'triagem', 'investigue', 'verifique', 'dissecar', 'rea',
+        'como esta a analise', 'como está a análise', 'voce esta analisando', 'você está analisando'
+    ]
+    eh_acao = any(pa in prompt_original.lower() for pa in palavras_acao)
+
+    # 1. Se o usuário pediu ação ou status de análise, REJEITA promessas futuras sem execução real de ferramentas
+    if eh_acao:
+        if contem_promessa_passiva(resposta) and not contem_tool_call(resposta):
+            return False, "promessa_sem_acao"
+        if not contem_tool_call(resposta) and not ("```" in resposta and len(resposta) > 600):
+            return False, "sem_tool_call"
+
+    # 2. Se o modo sem censura estiver ativado para conversações comuns
     if MODO_SEM_CENSURA:
-        if esta_repetindo(resposta):
-            return False, "repeticao"
         return True, "ok"
 
-    # Se a mensagem for conversação ou dúvida, NÃO obriga executar comando
     if eh_conversa_ou_pergunta(prompt_original):
-        if esta_repetindo(resposta):
-            return False, "repeticao"
         return True, "ok"
 
     if tem_ingles_predominante(resposta):
         return False, "ingles_detectado"
     if contem_frase_proibida(resposta):
         return False, "frase_proibida"
-    if esta_repetindo(resposta):
-        return False, "repeticao"
     if so_descricao_sem_acao(resposta):
         return False, "so_descricao_sem_acao"
-    # Somente se o usuário deu uma ordem explícita de ação técnica
-    palavras_acao = [
-        'compile', 'compilar', 'crie', 'criar', 'construa', 'instale',
-        'execute', 'rode', 'salve', 'baixe', 'analise', 'analisar',
-        'descompile', 'descompilar', 'triagem', 'investigue', 'verifique', 'dissecar', 'rea'
-    ]
-    if any(pa in prompt_original.lower() for pa in palavras_acao) and not contem_tool_call(resposta):
+    if eh_acao and not contem_tool_call(resposta):
         return False, "sem_tool_call"
     return True, "ok"
 
 CORRECOES = {
+    "promessa_sem_acao": (
+        "[SISTEMA - ALERTA MÁXIMO]: Você gerou uma resposta dizendo que 'vai continuar', 'está analisando' ou pedindo para 'aguardar', mas NÃO executou ferramentas reais! "
+        "Você NÃO é um chatbot descritivo. Pare de narrar o futuro ou inventar que concluiu passos. "
+        "EXECUTE AGORA a análise, decompilação e teste no Wine usando <tool_call> ou <EXECUTAR> (ex: 'file', 'strings', 'rea analyze', 'wine-headless omb.exe', 'analyzeHeadless'). "
+        "Traga os resultados REAIS já processados nesta rodada!"
+    ),
     "ingles_detectado": (
         "[SISTEMA] Responda SEMPRE em português do Brasil. Nunca misture inglês. "
         "Reescreva a resposta em português e continue executando via <EXECUTAR>."
@@ -1763,6 +1785,18 @@ def pensar(prompt, historico, contexto="", instrucao=""):
             if t_clean.startswith("/") and (os.path.exists(t_clean) or t_clean.startswith("/content") or t_clean.startswith("/home")):
                 caminho_detectado = t_clean
                 break
+
+    # 2.3 Se o caminho não veio no prompt, extrai do contexto do projeto ativo selecionado na UI
+    if not caminho_detectado and contexto:
+        match_ctx = re.search(r'(/content/[^\n,;]+|/home/[^\n,;]+|/drive/[^\n,;]+)', contexto)
+        if match_ctx:
+            caminho_detectado = match_ctx.group(1).strip()
+            for suf in [',', ';', '"', "'"]:
+                caminho_detectado = caminho_detectado.rstrip(suf)
+            print(f"[Agente Auto-Contexto] Caminho detectado do projeto ativo: {caminho_detectado}")
+
+    if caminho_detectado and os.path.exists(caminho_detectado):
+        CURRENT_CWD = caminho_detectado if os.path.isdir(caminho_detectado) else os.path.dirname(caminho_detectado)
 
     # Se o usuário enviou apenas um caminho (ex: /content/drive/MyDrive/AgentNexora/...)
     if caminho_detectado and prompt_limpo == caminho_detectado:

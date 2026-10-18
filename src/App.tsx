@@ -2413,31 +2413,93 @@ function ChatView({
     } catch {}
     setLoading(true);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutos de tolerância para compilação C++, download de toolchains e modelos locais
-
     try {
       const cleanUrl = colabUrl.trim().replace(/\/$/, '');
       const contextoAtivo = useProjectContext && activeProjectDir ? `Diretório atual de trabalho: ${activeProjectDir}` : '';
-      const response = await fetch(`${cleanUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensagem: userMsg.content, contexto: contextoAtivo }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
       
-      if (!response.ok) {
-        throw new Error(`Servidor respondeu com código ${response.status}`);
+      let usouAsync = false;
+      let respostaFinal = '';
+
+      // 1. Tenta fila assíncrona (/api/chat/async) para eliminar o limite de 100s do Cloudflare (Erro 524)
+      try {
+        const asyncRes = await fetch(`${cleanUrl}/api/chat/async`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensagem: userMsg.content, contexto: contextoAtivo }),
+          signal: AbortSignal.timeout(12000)
+        });
+
+        if (asyncRes.ok) {
+          const asyncData = await asyncRes.json();
+          if (asyncData.status === 'ok' && asyncData.task_id) {
+            usouAsync = true;
+            const taskId = asyncData.task_id;
+            const startTime = Date.now();
+            const maxPollTime = 900000; // 15 minutos para tarefas de descompilação pesada e download de toolchains
+
+            while (Date.now() - startTime < maxPollTime) {
+              await new Promise(r => setTimeout(r, 2000));
+              try {
+                const pollRes = await fetch(`${cleanUrl}/api/chat/task/${taskId}`, {
+                  signal: AbortSignal.timeout(8000)
+                });
+                if (pollRes.ok) {
+                  const taskStatus = await pollRes.json();
+                  if (taskStatus.etapa) {
+                    setAgentLiveStatus({
+                      status: taskStatus.status === 'processing' ? 'thinking' : 'idle',
+                      etapa: taskStatus.etapa,
+                      comando_atual: taskStatus.comando_atual,
+                      detalhes: taskStatus.detalhes
+                    });
+                  }
+                  if (taskStatus.status === 'completed') {
+                    respostaFinal = taskStatus.resposta || 'Tarefa concluída com sucesso.';
+                    break;
+                  } else if (taskStatus.status === 'error') {
+                    respostaFinal = taskStatus.resposta || `Erro no processamento: ${taskStatus.erro}`;
+                    break;
+                  }
+                }
+              } catch (pollErr) {
+                console.warn('[Polling Nexora status]', pollErr);
+              }
+            }
+
+            if (!respostaFinal && Date.now() - startTime >= maxPollTime) {
+              respostaFinal = '⚠️ [Tempo Limite de 15 min Excedido] A tarefa no Colab ultrapassou 15 minutos. Verifique o Google Drive ou a aba Terminal.';
+            }
+          }
+        }
+      } catch {
+        usouAsync = false;
       }
-      const data = await response.json();
-      setMessages(prev => [...prev, { role: 'assistant', content: data.resposta }]);
+
+      // 2. Fallback síncrono tradicional caso o servidor esteja em versão anterior
+      if (!usouAsync) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000);
+        const response = await fetch(`${cleanUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensagem: userMsg.content, contexto: contextoAtivo }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`Servidor respondeu com código ${response.status}`);
+        }
+        const data = await response.json();
+        respostaFinal = data.resposta;
+      }
+
+      setMessages(prev => [...prev, { role: 'assistant', content: respostaFinal }]);
       setConnectionStatus('connected');
     } catch (error: any) {
-      clearTimeout(timeoutId);
       const isTimeout = error.name === 'AbortError';
 
-      // Verifica se o Colab continua online (evita falso alarme de desconexão por timeout de 100s do Cloudflare)
+      // Verifica se o Colab continua online (evita falso alarme de desconexão)
       let isStillOnline = false;
       try {
         const cleanUrl = colabUrl.trim().replace(/\/$/, '');

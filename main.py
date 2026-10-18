@@ -7,6 +7,9 @@ import re
 import time
 from datetime import datetime
 from collections import deque
+import threading
+
+ASYNC_CHAT_TASKS = {}
 
 # Configurações iniciais passadas pelo Colab
 parser = argparse.ArgumentParser()
@@ -1785,6 +1788,14 @@ def pensar(prompt, historico, contexto="", instrucao=""):
     ])
     termos_apenas_relatorio = ['apenas relatorio', 'somente relatorio', 'apenas triagem', 'so relatorio']
     alvo_re = caminho_detectado or CURRENT_CWD
+    if (not alvo_re or alvo_re in [".", "/content", "/root", ""] or not os.path.exists(alvo_re)) and pediu_re:
+        dir_re_base = "/content/drive/MyDrive/AgentNexora/RE"
+        if os.path.exists(dir_re_base):
+            subpastas = [os.path.join(dir_re_base, d) for d in os.listdir(dir_re_base) if os.path.isdir(os.path.join(dir_re_base, d))]
+            if subpastas:
+                subpastas.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                alvo_re = subpastas[0]
+                print(f"[Agente Auto-Target] Alvo RE inferido da pasta mais recente no Drive: {alvo_re}")
 
     if pediu_re and alvo_re and (os.path.exists(alvo_re) or alvo_re.startswith("/content/drive")):
         print(f"[Agente Auto-REA] Executando triagem técnica REA para subsidiar o Hermes: {alvo_re}")
@@ -2720,6 +2731,61 @@ def api_chat(req: ChatRequest):
         err_msg = f"Erro ao processar no Nexora: {str(e)}"
         print(f"[Web Interface Erro]: {err_msg}")
         return {"resposta": f"⚠️ [Aviso do Nexora]: {err_msg}"}
+
+@api_app.post("/api/chat/async")
+def api_chat_async(req: ChatRequest):
+    task_id = f"task_{int(time.time()*1000)}"
+    ASYNC_CHAT_TASKS[task_id] = {
+        "status": "processing",
+        "iniciado_em": time.time(),
+        "etapa": "Iniciando processamento no Nexora Agent...",
+        "detalhes": req.mensagem[:100],
+        "resposta": "",
+        "erro": None
+    }
+
+    def _worker():
+        try:
+            historico = carregar_memoria()
+            print(f"\n[Web Interface Async] Iniciando tarefa {task_id}: {req.mensagem[:60]}...")
+            resposta = pensar(req.mensagem, historico, req.contexto, req.instrucao)
+            ASYNC_CHAT_TASKS[task_id]["status"] = "completed"
+            ASYNC_CHAT_TASKS[task_id]["resposta"] = resposta
+            ASYNC_CHAT_TASKS[task_id]["etapa"] = "Tarefa concluída"
+            print(f"[Web Interface Async] Tarefa {task_id} finalizada com sucesso.")
+        except Exception as e:
+            err_msg = str(e)
+            print(f"[Web Interface Async Erro {task_id}]: {err_msg}")
+            ASYNC_CHAT_TASKS[task_id]["status"] = "error"
+            ASYNC_CHAT_TASKS[task_id]["erro"] = err_msg
+            ASYNC_CHAT_TASKS[task_id]["resposta"] = f"⚠️ [Aviso do Nexora]: Erro ao processar: {err_msg}"
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"status": "ok", "task_id": task_id, "mensagem": "Tarefa iniciada em segundo plano"}
+
+@api_app.get("/api/chat/task/{task_id}")
+def api_chat_task(task_id: str):
+    task = ASYNC_CHAT_TASKS.get(task_id)
+    if not task:
+        return {"status": "not_found", "mensagem": "Tarefa não encontrada"}
+    
+    etapa = task.get("etapa")
+    detalhes = task.get("detalhes", "")
+    comando_atual = ""
+    if task.get("status") == "processing":
+        etapa = AGENT_CURRENT_STATE.get("etapa") or "Processando no Google Colab..."
+        detalhes = AGENT_CURRENT_STATE.get("detalhes") or ""
+        comando_atual = AGENT_CURRENT_STATE.get("comando_atual") or ""
+
+    return {
+        "task_id": task_id,
+        "status": task.get("status"),
+        "etapa": etapa,
+        "detalhes": detalhes,
+        "comando_atual": comando_atual,
+        "resposta": task.get("resposta", ""),
+        "erro": task.get("erro")
+    }
 
 @api_app.get("/api/agent/instructions")
 def api_get_instructions():

@@ -1719,6 +1719,7 @@ CORRECOES = {
 
 def pensar(prompt, historico, contexto="", instrucao=""):
     global CURRENT_CWD, AGENT_CURRENT_STATE
+    logs_execucao = []
     url = "http://localhost:11434/api/chat"
     prompt_limpo = prompt.strip()
 
@@ -2081,6 +2082,22 @@ def pensar(prompt, historico, contexto="", instrucao=""):
                         res_rea = analisar_com_rea(target_val, modelo_ia=mod_rev)
                         logs_execucao.append(f"🔬 **REA Suite (morluto/rea + {mod_rev}):** `{os.path.basename(target_val)}`\n- Relatório: `{res_rea.get('relatorio', '')}`\n- Arquitetura: `{res_rea.get('pe_info', {}).get('arch', 'N/A')}`")
                         mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_analyze\", \"result\": {json.dumps(res_rea.get('resumo_md', '')[:1500])}}}\n</tool_response>"})
+                        tem_acao = True
+
+                elif fn_name in ["rea_doctor", "doctor_rea"]:
+                    cmd_doc = "rea doctor 2>&1" if subprocess.getoutput("which rea 2>/dev/null").strip() else "npx -y rea-agents@latest doctor 2>&1"
+                    res_doc = subprocess.getoutput(cmd_doc)
+                    logs_execucao.append(f"🩺 **REA Doctor (morluto/rea):**\n```\n{res_doc[:600]}\n```")
+                    mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_doctor\", \"output\": {json.dumps(res_doc[:1200])}}}\n</tool_response>"})
+                    tem_acao = True
+
+                elif fn_name in ["rea_inspect", "inspect_rea"]:
+                    target_val = fn_args.get("target") or fn_args.get("caminho") or fn_args.get("path") or ""
+                    if target_val:
+                        cmd_insp = f"rea inspect '{target_val}' 2>&1" if subprocess.getoutput("which rea 2>/dev/null").strip() else f"npx -y rea-agents@latest inspect '{target_val}' 2>&1"
+                        res_insp = subprocess.getoutput(cmd_insp)
+                        logs_execucao.append(f"🔍 **REA Inspect:** `{os.path.basename(target_val)}`\n```\n{res_insp[:600]}\n```")
+                        mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_inspect\", \"output\": {json.dumps(res_insp[:1500])}}}\n</tool_response>"})
                         tem_acao = True
 
                 elif fn_name in ["wine_test", "wine_run", "testar_wine", "wine"]:

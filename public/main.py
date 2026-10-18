@@ -1719,6 +1719,7 @@ CORRECOES = {
 
 def pensar(prompt, historico, contexto="", instrucao=""):
     global CURRENT_CWD, AGENT_CURRENT_STATE
+    logs_execucao = []
     url = "http://localhost:11434/api/chat"
     prompt_limpo = prompt.strip()
 
@@ -1792,7 +1793,14 @@ def pensar(prompt, historico, contexto="", instrucao=""):
         AGENT_CURRENT_STATE["etapa"] = f"Pipeline REA: {os.path.basename(alvo_re)}"
         try:
             from rea_engine import analisar_com_rea
-            modelo_revisor = "qwen2.5:7b" if ("dual" in ACTIVE_MODEL or "qwen" in ACTIVE_MODEL) else "hermes3:8b"
+            if "codestral" in ACTIVE_MODEL:
+                modelo_revisor = "codestral:22b"
+            elif "qwen" in ACTIVE_MODEL:
+                modelo_revisor = "qwen2.5:7b"
+            elif "dual" in ACTIVE_MODEL:
+                modelo_revisor = "codestral:22b" if "codestral" in ACTIVE_MODEL else ("qwen2.5:7b" if "qwen" in ACTIVE_MODEL else "codestral:22b")
+            else:
+                modelo_revisor = "hermes3:8b"
             res_rea = analisar_com_rea(alvo_re, modelo_ia=modelo_revisor)
             
             if res_rea.get("sucesso", True):
@@ -2063,10 +2071,33 @@ def pensar(prompt, historico, contexto="", instrucao=""):
                     target_val = fn_args.get("target") or fn_args.get("caminho") or fn_args.get("path") or ""
                     if target_val:
                         from rea_engine import analisar_com_rea
-                        mod_rev = "qwen2.5:7b" if ("dual" in ACTIVE_MODEL or "qwen" in ACTIVE_MODEL) else "hermes3:8b"
+                        if "codestral" in ACTIVE_MODEL:
+                            mod_rev = "codestral:22b"
+                        elif "qwen" in ACTIVE_MODEL:
+                            mod_rev = "qwen2.5:7b"
+                        elif "dual" in ACTIVE_MODEL:
+                            mod_rev = "codestral:22b" if "codestral" in ACTIVE_MODEL else ("qwen2.5:7b" if "qwen" in ACTIVE_MODEL else "codestral:22b")
+                        else:
+                            mod_rev = "hermes3:8b"
                         res_rea = analisar_com_rea(target_val, modelo_ia=mod_rev)
                         logs_execucao.append(f"🔬 **REA Suite (morluto/rea + {mod_rev}):** `{os.path.basename(target_val)}`\n- Relatório: `{res_rea.get('relatorio', '')}`\n- Arquitetura: `{res_rea.get('pe_info', {}).get('arch', 'N/A')}`")
                         mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_analyze\", \"result\": {json.dumps(res_rea.get('resumo_md', '')[:1500])}}}\n</tool_response>"})
+                        tem_acao = True
+
+                elif fn_name in ["rea_doctor", "doctor_rea"]:
+                    cmd_doc = "rea doctor 2>&1" if subprocess.getoutput("which rea 2>/dev/null").strip() else "npx -y rea-agents@latest doctor 2>&1"
+                    res_doc = subprocess.getoutput(cmd_doc)
+                    logs_execucao.append(f"🩺 **REA Doctor (morluto/rea):**\n```\n{res_doc[:600]}\n```")
+                    mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_doctor\", \"output\": {json.dumps(res_doc[:1200])}}}\n</tool_response>"})
+                    tem_acao = True
+
+                elif fn_name in ["rea_inspect", "inspect_rea"]:
+                    target_val = fn_args.get("target") or fn_args.get("caminho") or fn_args.get("path") or ""
+                    if target_val:
+                        cmd_insp = f"rea inspect '{target_val}' 2>&1" if subprocess.getoutput("which rea 2>/dev/null").strip() else f"npx -y rea-agents@latest inspect '{target_val}' 2>&1"
+                        res_insp = subprocess.getoutput(cmd_insp)
+                        logs_execucao.append(f"🔍 **REA Inspect:** `{os.path.basename(target_val)}`\n```\n{res_insp[:600]}\n```")
+                        mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_inspect\", \"output\": {json.dumps(res_insp[:1500])}}}\n</tool_response>"})
                         tem_acao = True
 
                 elif fn_name in ["wine_test", "wine_run", "testar_wine", "wine"]:
@@ -2634,7 +2665,9 @@ def api_models_list():
         "modelo_ativo": ACTIVE_MODEL,
         "modelos_instalados": installed,
         "modelos_sugeridos": [
+            {"id": "dual:hermes3+codestral", "nome": "🚀 Dual Engine: Hermes 3 + Codestral (22B)", "descricao": "Hermes 3 (8B Executor/Tools) + Codestral (22B Mistral Código/Assembly/Decompilação) na GPU L4 (24GB VRAM)"},
             {"id": "dual:hermes3+qwen2.5", "nome": "⚡ Dual Engine: Hermes 3 + Qwen 2.5", "descricao": "Hermes 3 (Executor/Tools) + Qwen 2.5 (Analista REA/Código) na GPU L4 (24GB VRAM)"},
+            {"id": "codestral:22b", "nome": "Codestral 22B (Mistral AI)", "descricao": "Especialista em 80+ linguagens, C/C++, Assembly e Engenharia Reversa (14GB VRAM)"},
             {"id": "hermes3:8b", "nome": "Nous Hermes 3 (8B)", "descricao": "Agente Autônomo com Scratchpad e Tool Calling na GPU L4 (24GB VRAM)"},
             {"id": "qwen2.5:7b", "nome": "Qwen 2.5 (7B)", "descricao": "Raciocínio lógico afiado, geração de código e ferramentas"},
             {"id": "qwen2.5:14b", "nome": "Qwen 2.5 (14B)", "descricao": "Modelo de alto nível para arquitetura e engenharia complexa"},
@@ -2881,7 +2914,7 @@ def api_save_security(req: TextFileUpdateRequest):
 @api_app.get("/api/agent/modelfiles")
 def api_get_modelfiles():
     resultado = {}
-    for mf in ["Modelfile.hermes3", "Modelfile.qwen2.5"]:
+    for mf in ["Modelfile.hermes3", "Modelfile.codestral", "Modelfile.qwen2.5"]:
         if os.path.exists(mf):
             try:
                 with open(mf, "r", encoding="utf-8") as f:

@@ -77,6 +77,8 @@ O Nexora opera em modo **Dual Engine Híbrido**, combinando a especialização d
 | **Sandbox Wine** | `<tool_call>{"name": "wine_test", "arguments": {"executable": "..."}}</tool_call>` | Roda executável Windows e detecta DLLs |
 | **InnoExtract** | `<tool_call>{"name": "innoextract", "arguments": {"installer": "..."}}</tool_call>` | Extrai instalador sem executar GUI |
 | **REA Analyze** | `<tool_call>{"name": "rea_analyze", "arguments": {"target": "..."}}</tool_call>` | Triagem profunda de binários pelo morluto/rea |
+| **REA Doctor** | `<tool_call>{"name": "rea_doctor"}</tool_call>` | Diagnóstico completo de ferramentas REA e decompiladores |
+| **REA Inspect** | `<tool_call>{"name": "rea_inspect", "arguments": {"target": "..."}}</tool_call>` | Inspeciona símbolos, imports/exports e cabeçalhos binários |
 
 ---
 

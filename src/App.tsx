@@ -4428,12 +4428,13 @@ function ConfigView({
         </div>
 
         {/* Botões Rápidos de Modelos Recomendados */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-2">
           {[
-            { id: 'dual:hermes3+qwen2.5', title: '⚡ Dual Engine (Hermes + Qwen)', desc: 'Hermes 3 (Ação/Tools) + Qwen 2.5 (Analista REA & Código)' },
+            { id: 'dual:hermes3+codestral', title: '🚀 Dual Engine (Hermes + Codestral 22B)', desc: 'Hermes 3 (Ação/Tools) + Codestral 22B (Mistral Código & Assembly)' },
+            { id: 'dual:hermes3+qwen2.5', title: '⚡ Dual Engine (Hermes + Qwen 2.5)', desc: 'Hermes 3 (Ação/Tools) + Qwen 2.5 (Analista REA & Código)' },
+            { id: 'codestral:22b', title: 'Codestral (22B)', desc: 'Mistral AI • Especialista Sênior 80+ Linguagens (14GB)' },
             { id: 'hermes3:8b', title: 'Hermes 3 (8B)', desc: 'Nous Research • Tool Calling & Scratchpad' },
             { id: 'qwen2.5:7b', title: 'Qwen 2.5 (7B)', desc: 'Alibaba • Rápido & Preciso' },
-            { id: 'qwen2.5:14b', title: 'Qwen 2.5 (14B)', desc: 'Alta Capacidade (Cabe nos 24GB L4)' },
             { id: 'deepseek-coder:6.7b', title: 'DeepSeek Coder', desc: 'Engenharia Reversa & C/C++' },
           ].map(m => {
             const isSelected = (status?.modelo || modelInput) === m.id;
@@ -4837,7 +4838,7 @@ python3 ponte_local.py`}
             <div className="flex items-center justify-between">
               <span className="font-semibold text-neutral-200">2. No Google Colab (GPU L4 24GB + Desktop VNC):</span>
               <button 
-                onClick={() => copyToClipboard('!bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5', 'colab')}
+                onClick={() => copyToClipboard('!bash iniciar_colab_hermes.sh dual:hermes3+codestral', 'colab')}
                 className="text-[11px] text-neutral-400 hover:text-white flex items-center gap-1"
               >
                 {copiedCmd === 'colab' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
@@ -4845,11 +4846,11 @@ python3 ponte_local.py`}
               </button>
             </div>
             <pre className="bg-black/60 p-2.5 rounded border border-white/5 font-mono text-[11px] text-neutral-300 overflow-x-auto">
-{`# Opção 1 (Padrão - SEM TOKEN, 100% automático via Cloudflare):
-!bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5
+{`# Opção 1 (Padrão Recomendado - Hermes 3 + Codestral 22B na GPU L4 24GB):
+!bash iniciar_colab_hermes.sh dual:hermes3+codestral
 
-# Opção 2 (Opcional - Com Tailscale para Zero Timeouts):
-# TAILSCALE_AUTHKEY="tskey-auth-..." !bash iniciar_colab_hermes.sh dual:hermes3+qwen2.5`}
+# Opção 2 (Com Tailscale para Zero Timeouts):
+# TAILSCALE_AUTHKEY="tskey-auth-..." !bash iniciar_colab_hermes.sh dual:hermes3+codestral`}
             </pre>
             <p className="text-[11px] text-neutral-400 leading-relaxed">
               Inicia o <strong>Desktop Gráfico Kali (noVNC na porta 6080)</strong> e a <strong>API Nexora (porta 5000)</strong>. Não precisa de token para o Cloudflare funcionar.

@@ -21,7 +21,7 @@ Abra o seu Google Colab, configure o ambiente para **GPU L4** (`Ambiente de Exec
 
 ```python
 # ==============================================================================
-# 🐉 NEXORA AGENT: KALI LINUX + WINE + AUDIO WORKSTATION + REA ENGINE (morluto/rea)
+# 🐉 NEXORA AGENT: KALI LINUX + WINE + DUAL ENGINE (HERMES 3 + CODESTRAL 22B) + REA
 # ==============================================================================
 import os
 import sys
@@ -34,7 +34,7 @@ from google.colab import drive
 # 🔑 CONFIGURAÇÃO DO TAILSCALE (ÚNICA LINHA ONDE FICA SUA CHAVE)
 # ------------------------------------------------------------------------------
 TAILSCALE_AUTHKEY = ""  # Cole sua chave aqui se desejar (ex: "tskey-auth-...")
-MODELO_PADRAO = "dual:hermes3+qwen2.5"
+MODELO_PADRAO = "dual:hermes3+codestral"
 
 def run_bash(cmd):
     """Executa scripts bash de forma segura no Colab sem erro de aspas."""
@@ -86,13 +86,18 @@ run_bash("apt-get update -qq")
 run_bash("""
 apt-get install -y --no-install-recommends \
     xvfb x11vnc novnc websockify dbus-x11 \
-    xfwm4 xfce4-panel xfdesktop4 xfce4-terminal \
+    xfwm4 xfce4-panel xfdesktop4 xfce4-terminal mousepad nano \
     x11-xserver-utils feh thunar zstd net-tools \
     bzip2 libgtk-3-0 libdbus-glib-1-2 \
     wine wine64 winetricks unrar p7zip-full innoextract \
     binutils file xxd bsdextrautils bsdmainutils ent \
     curl wget git python3-pip python3-dev build-essential > /dev/null 2>&1
 """)
+
+# Sincroniza SOUL.md, AGENTS.md e SECURITY.md com o Google Drive
+for f_prompt in ["SOUL.md", "AGENTS.md", "SECURITY.md", "Modelfile.hermes3", "Modelfile.codestral", "Modelfile.qwen2.5"]:
+    if os.path.exists(f_prompt) and not os.path.exists(f"{DRIVE_BASE}/{f_prompt}"):
+        run_bash(f"cp -f '{f_prompt}' '{DRIVE_BASE}/{f_prompt}' 2>/dev/null || true")
 
 # Cria o wrapper wine-headless para evitar travamentos de display
 with open('/usr/local/bin/wine-headless', 'w') as f:
@@ -110,11 +115,66 @@ cat << 'EOF' > /root/Desktop/terminal.desktop
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Terminal Kali
+Name=Terminal Kali Root
 Exec=xfce4-terminal --geometry=110x30
 Icon=utilities-terminal
 Terminal=false
 Categories=System;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_soul.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🧠 Editar SOUL.md (Personalidade)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/SOUL.md
+Icon=text-editor
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_agents.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🤖 Editar AGENTS.md (Dual Engine)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/AGENTS.md
+Icon=system-run
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/editar_security.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=🔒 Editar SECURITY.md (Root & Sandbox)
+Exec=mousepad /content/drive/MyDrive/AgentNexora/SECURITY.md
+Icon=security-high
+Terminal=false
+Categories=Development;
+EOF
+
+cat << 'EOF' > /root/Desktop/drive_nexora.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=📂 Google Drive (Nexora)
+Exec=thunar /content/drive/MyDrive/AgentNexora
+Icon=folder
+Terminal=false
+Categories=System;
+EOF
+
+cat << 'EOF' > /root/Desktop/codigo_agente.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=💻 Repositório (Código Python)
+Exec=thunar /content/Agent-Nexora-Colab
+Icon=system-file-manager
+Terminal=false
+Categories=Development;
 EOF
 
 cat << 'EOF' > /root/Desktop/winecfg.desktop
@@ -143,27 +203,25 @@ chmod +x /root/Desktop/*.desktop 2>/dev/null || true
 """)
 
 # ------------------------------------------------------------------------------
-# 4.2. INICIALIZAÇÃO DO DISPLAY VIRTUAL X11 & SESSÃO GRÁFICA KALI (Xvfb + x11vnc)
+# 4.2. INICIALIZAÇÃO DO DISPLAY VIRTUAL X11 & SESSÃO GRÁFICA KALI (PORTA 6080)
 # ------------------------------------------------------------------------------
-print("\n🖥️ [4.2/7] Subindo Desktop Gráfico do Kali Linux (Xvfb + x11vnc + NoVNC)...")
-run_bash("""
-pkill -9 -f "Xvfb" || true
-pkill -9 -f "x11vnc" || true
-pkill -9 -f "websockify" || true
-pkill -9 -f "cloudflared.*6080" || true
-rm -rf /tmp/.X11-unix/X1 /tmp/.X1-lock /tmp/.X5900-lock 2>/dev/null || true
+print("\n🖥️ [4.5/7] Subindo Desktop Gráfico do Kali Linux (Xvfb + x11vnc + NoVNC)...")
+run_bash("pkill -9 -f 'Xvfb' || true")
+run_bash("pkill -9 -f 'x11vnc' || true")
+run_bash("pkill -9 -f 'websockify' || true")
+run_bash("pkill -9 -f 'cloudflared' || true")
+run_bash("rm -rf /tmp/.X11-unix/X1 /tmp/.X1-lock /tmp/.X5900-lock /tmp/runtime-root 2>/dev/null || true")
 
-export DISPLAY=":1"
-export XDG_RUNTIME_DIR="/tmp/runtime-root"
-mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
+os.environ["DISPLAY"] = ":1"
+os.environ["XDG_RUNTIME_DIR"] = "/tmp/runtime-root"
+os.makedirs("/tmp/runtime-root", mode=0o700, exist_ok=True)
 
-# Display virtual HD 1280x720
-Xvfb :1 -screen 0 1280x720x24 > /dev/null 2>&1 &
-sleep 2
+# 1. Display virtual HD 1280x720
+subprocess.Popen(["Xvfb", ":1", "-screen", "0", "1280x720x24"])
+time.sleep(2)
 
-# Script de inicialização da sessão XFCE
-cat << 'EOF' > /tmp/start_kali.sh
-#!/bin/bash
+# 2. Script de inicialização da sessão XFCE
+desktop_script = """#!/bin/bash
 export DISPLAY=:1
 export XDG_RUNTIME_DIR=/tmp/runtime-root
 eval $(dbus-launch --sh-syntax)
@@ -176,26 +234,29 @@ xfdesktop &
 
 sleep 2
 xfce4-terminal --geometry=100x28+140+70 --title="🐉 Kali Linux Terminal - Nexora Colab" &
-EOF
-chmod +x /tmp/start_kali.sh
-/bin/bash /tmp/start_kali.sh > /dev/null 2>&1 &
-sleep 2
+"""
+with open("/tmp/start_kali.sh", "w") as f_sh:
+    f_sh.write(desktop_script)
+os.chmod("/tmp/start_kali.sh", 0o755)
+subprocess.Popen("/bin/bash /tmp/start_kali.sh", shell=True)
+time.sleep(3)
 
-# Servidor VNC (porta 5900) e NoVNC Web (porta 6080)
-x11vnc -display :1 -nopw -listen localhost -forever -shared -rfbport 5900 > /tmp/x11vnc.log 2>&1 &
-sleep 1
-
-NOVNC_DIR="/usr/share/novnc"
-if [ ! -d "$NOVNC_DIR" ]; then
-    git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc 2>/dev/null || true
-    NOVNC_DIR="/opt/novnc"
+# 3. Servidor VNC e noVNC Web (Garante diretório novnc)
+run_bash("""
+if [ ! -d /usr/share/novnc ]; then
+    git clone --depth 1 https://github.com/novnc/noVNC.git /usr/share/novnc 2>/dev/null || true
 fi
-ln -sf "$NOVNC_DIR/vnc.html" "$NOVNC_DIR/index.html" 2>/dev/null || true
-websockify -D --web="$NOVNC_DIR" 6080 localhost:5900 > /tmp/websockify.log 2>&1
-
-# Túnel Cloudflare para o NoVNC na porta 6080
-cloudflared tunnel --url http://localhost:6080 > /tmp/novnc_cf.log 2>&1 &
+ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
 """)
+
+subprocess.Popen("x11vnc -display :1 -nopw -listen localhost -forever -shared -rfbport 5900 > /dev/null 2>&1", shell=True)
+time.sleep(1)
+subprocess.Popen("websockify -D --web=/usr/share/novnc/ 6080 localhost:5900 > /dev/null 2>&1", shell=True)
+time.sleep(1)
+
+# 4. Inicia túnel Cloudflare para o NoVNC na porta 6080
+vnc_log = open("/tmp/novnc_cf.log", "w")
+subprocess.Popen(["cloudflared", "tunnel", "--url", "http://localhost:6080"], stdout=vnc_log, stderr=subprocess.STDOUT)
 
 # ------------------------------------------------------------------------------
 # 5. INSTALAÇÃO DA TOOLCHAIN REA (morluto/rea) & LIBS DE DISSECÇÃO PYTHON
@@ -243,56 +304,98 @@ for _ in range(25):
         break
     time.sleep(1)
 
-print("-> Carregando modelos Hermes 3 e Qwen 2.5 para Dual Engine (24GB VRAM)...")
+print("-> Carregando modelos Hermes 3 (8B) e Codestral (22B) para Dual Engine (24GB VRAM)...")
 run_bash("ollama pull hermes3:8b")
-run_bash("ollama pull qwen2.5:7b")
+run_bash("ollama pull codestral:22b")
 
 # ------------------------------------------------------------------------------
-# 7. REDE & SERVIDORES: CLOUDFLARE + NEXORA API
+# 7. REDE & SERVIDORES: CLOUDFLARE + TAILSCALE (OPCIONAL) + NEXORA API
 # ------------------------------------------------------------------------------
 print("\n🛡️ [7/7] Subindo conexões e Servidor API do Nexora...")
 
-# Túnel Cloudflare para a API na porta 5000
-run_bash("pkill -f 'cloudflared.*5000' || true")
-subprocess.Popen("cloudflared tunnel --url http://localhost:5000 > /tmp/cloudflared.log 2>&1", shell=True)
+# 7.1. Se fornecida AuthKey do Tailscale, conecta e aguarda o IP
+ts_ip = ""
+if TAILSCALE_AUTHKEY.strip():
+    print("🛡️ Conectando à malha Tailscale com sua Auth Key...")
+    run_bash("""
+    if ! command -v tailscale &>/dev/null; then
+        curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true
+    fi
+    mkdir -p /dev/net && mknod /dev/net/tun c 10 200 2>/dev/null || true
+    chmod 600 /dev/net/tun 2>/dev/null || true
+    if ! pgrep -f "tailscaled" >/dev/null; then
+        tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 > /tmp/tailscaled.log 2>&1 &
+        sleep 2
+    fi
+    """)
+    run_bash(f'tailscale up --authkey="{TAILSCALE_AUTHKEY.strip()}" --hostname="nexora-colab" --accept-routes > /tmp/ts_up.log 2>&1 || true')
+    for _ in range(15):
+        time.sleep(1)
+        raw_ip = subprocess.getoutput("tailscale ip -4 2>/dev/null").strip()
+        if raw_ip and "." in raw_ip and not "failed" in raw_ip.lower():
+            ts_ip = raw_ip.splitlines()[0].strip()
+            print(f"✓ Tailscale conectado com sucesso! IP do Colab: {ts_ip}")
+            subprocess.Popen("tailscale serve --bg --yes 5000 >/dev/null 2>&1 || true", shell=True)
+            subprocess.Popen("tailscale serve --bg --yes 6080 >/dev/null 2>&1 || true", shell=True)
+            break
+else:
+    print("ℹ️ Tailscale não configurado (opcional). Usando túneis Cloudflare 100% automáticos (sem necessidade de token)!")
 
-# Aguarda URLs dos dois túneis (API Web + Desktop NoVNC)
+# 7.2. Túnel Cloudflare para a API do Nexora (porta 5000)
+api_log = open("/tmp/cloudflared.log", "w")
+subprocess.Popen(["cloudflared", "tunnel", "--url", "http://localhost:5000"], stdout=api_log, stderr=subprocess.STDOUT)
+
+# 7.3. Aguarda os dois túneis (API 5000 e Desktop VNC 6080)
 cf_url = ""
-vnc_cf_url = ""
-for _ in range(25):
-    if not cf_url and os.path.exists("/tmp/cloudflared.log"):
-        txt = open("/tmp/cloudflared.log").read()
-        m = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', txt)
-        if m: cf_url = m.group(0)
-    if not vnc_cf_url and os.path.exists("/tmp/novnc_cf.log"):
-        txt_v = open("/tmp/novnc_cf.log").read()
-        m_v = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', txt_v)
-        if m_v: vnc_cf_url = f"{m_v.group(0)}/vnc.html?autoconnect=true"
-    if cf_url and vnc_cf_url:
-        break
+vnc_url = ""
+
+for _ in range(30):
     time.sleep(1)
+    if not cf_url and os.path.exists("/tmp/cloudflared.log"):
+        with open("/tmp/cloudflared.log", "r") as f_c:
+            m = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', f_c.read())
+            if m: cf_url = m.group(0)
+    if not vnc_url and os.path.exists("/tmp/novnc_cf.log"):
+        with open("/tmp/novnc_cf.log", "r") as f_v:
+            m_v = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', f_v.read())
+            if m_v: vnc_url = f"{m_v.group(0)}/vnc.html"
+    if cf_url and vnc_url:
+        break
 
-ts_ip = subprocess.getoutput("tailscale ip -4 2>/dev/null").strip()
+# Se o túnel VNC demorou, tenta restart rápido para garantir
+if not vnc_url:
+    with open("/tmp/novnc_cf.log", "w") as f_v2:
+        subprocess.Popen(["cloudflared", "tunnel", "--url", "http://localhost:6080"], stdout=f_v2, stderr=subprocess.STDOUT)
+    for _ in range(15):
+        time.sleep(1)
+        if os.path.exists("/tmp/novnc_cf.log"):
+            with open("/tmp/novnc_cf.log", "r") as f_v2:
+                m_v2 = re.search(r'https://[-a-zA-Z0-9.]*\.trycloudflare\.com', f_v2.read())
+                if m_v2:
+                    vnc_url = f"{m_v2.group(0)}/vnc.html"
+                    break
 
-print("\n" + "="*75)
-print("🚀 NEXORA AGENT + REA & WINE SANDBOX + DESKTOP VNC ONLINE!")
-print("="*75)
+print("\n" + "="*72)
+print("🐉 ECOSSISTEMA NEXORA + KALI DESKTOP ONLINE! (HERMES 3 & CODESTRAL 22B)")
+print("="*72)
+
+if vnc_url:
+    print(f"\n🖥️ KALI LINUX DESKTOP (CLIQUE PARA ABRIR NO NAVEGADOR):")
+    print(f"👉 {vnc_url}?autoconnect=true 👈")
+
 if cf_url:
-    print(f"🌐 INTERFACE WEB (HTTPS): {cf_url}")
-    print("   👉 Cole o link acima no campo 'Servidor 1: Google Colab' da Web UI.")
-if vnc_cf_url:
-    print(f"🖥️ DESKTOP GRÁFICO (NoVNC Web): {vnc_cf_url}")
-    print("   👉 Abra o link acima no navegador para acessar o desktop XFCE / Kali completo!")
-elif ts_ip and "." in ts_ip:
-    print(f"🖥️ DESKTOP GRÁFICO (Tailscale Web): http://{ts_ip}:6080/vnc.html?autoconnect=true")
-    print(f"   👉 Cliente VNC (TigerVNC): {ts_ip}:5901 (Senha: nexora123)")
-if ts_ip and "." in ts_ip and not "failed" in ts_ip.lower():
-    print(f"🛡️ IP TAILSCALE DO COLAB (SEM TIMEOUT): http://{ts_ip}:5000")
-    print("   👉 Conexão P2P WireGuard direta com seu Kali Linux sem nenhuma queda!")
-print("="*75 + "\n")
+    print(f"\n☁️ SERVIDOR 1 (COLAB API - COLE NA INTERFACE WEB):")
+    print(f"👉 {cf_url} 👈")
+
+if ts_ip:
+    print(f"\n🛡️ TAILSCALE P2P (ZERO TIMEOUTS):")
+    print(f"👉 API Colab: http://{ts_ip}:5000")
+    print(f"👉 Desktop VNC: http://{ts_ip}:6080/vnc.html?autoconnect=true")
+
+print("\n" + "="*72 + "\n")
 
 # Inicia o Servidor FastAPI do Nexora na porta 5000
-run_bash(f'python3 main.py --api --port 5000 --modelo "{MODELO_PADRAO}" --memoria_dir "/content/drive/MyDrive/AgentNexora/memory"')
+run_bash(f'python3 main.py --api --port 5000 --modelo "{MODELO_PADRAO}" --sem_censura --memoria_dir "/content/drive/MyDrive/AgentNexora/memory" --tailscale_authkey "{TAILSCALE_AUTHKEY.strip()}"')
 ```
 
 ---

@@ -209,9 +209,9 @@ def dissecar_pe_windows(caminho_binario):
     return info
 
 
-def sintetizar_com_qwen(dados_analise: dict, modelo: str = "qwen2.5:7b") -> str:
+def sintetizar_com_qwen(dados_analise: dict, modelo: str = "codestral:22b") -> str:
     """
-    Utiliza o modelo Qwen 2.5 (ou o modelo analista configurado no Ollama)
+    Utiliza o modelo Codestral 22B ou Qwen 2.5 (configurado no Ollama)
     para produzir uma síntese técnica detalhada da arquitetura do binário
     e recomendações de engenharia reversa.
     """
@@ -221,8 +221,9 @@ def sintetizar_com_qwen(dados_analise: dict, modelo: str = "qwen2.5:7b") -> str:
     secoes = [s.get("nome", "") for s in pe.get("secoes", [])]
     strings_amostra = [s.strip() for s in dados_analise.get("strings_amostra", []) if s.strip()][:25]
     diag_wine = dados_analise.get("wine_diagnosticos", [])
+    nome_ia = "Codestral 22B (Mistral AI)" if "codestral" in modelo else "Qwen 2.5 (Alibaba Cloud)"
     
-    prompt_qwen = f"""Você é o especialista de engenharia reversa (Qwen 2.5) do Nexora Agent.
+    prompt_qwen = f"""Você é o especialista de engenharia reversa ({nome_ia}) do Nexora Agent.
 Analise os seguintes metadados extraídos de um executável pelo módulo REA (morluto/rea):
 
 - Alvo: {alvo}
@@ -272,7 +273,7 @@ Forneça uma síntese técnica concisa, objetiva e profissional em português do
     return ""
 
 
-def analisar_com_rea(caminho_alvo, output_dir=None, modelo_ia="qwen2.5:7b"):
+def analisar_com_rea(caminho_alvo, output_dir=None, modelo_ia="codestral:22b"):
     """
     Executa a suíte REA (morluto/rea) e decompilação/triagem completa,
     salvando relatórios e evidências no Google Drive.

@@ -21,7 +21,7 @@ Abra o seu Google Colab, configure o ambiente para **GPU L4** (`Ambiente de Exec
 
 ```python
 # ==============================================================================
-# 🐉 NEXORA AGENT: KALI LINUX + WINE + AUDIO WORKSTATION + REA ENGINE (morluto/rea)
+# 🐉 NEXORA AGENT: KALI LINUX + WINE + DUAL ENGINE (HERMES 3 + CODESTRAL 22B) + REA
 # ==============================================================================
 import os
 import sys
@@ -34,7 +34,7 @@ from google.colab import drive
 # 🔑 CONFIGURAÇÃO DO TAILSCALE (ÚNICA LINHA ONDE FICA SUA CHAVE)
 # ------------------------------------------------------------------------------
 TAILSCALE_AUTHKEY = ""  # Cole sua chave aqui se desejar (ex: "tskey-auth-...")
-MODELO_PADRAO = "dual:hermes3+qwen2.5"
+MODELO_PADRAO = "dual:hermes3+codestral"
 
 def run_bash(cmd):
     """Executa scripts bash de forma segura no Colab sem erro de aspas."""
@@ -95,7 +95,7 @@ apt-get install -y --no-install-recommends \
 """)
 
 # Sincroniza SOUL.md, AGENTS.md e SECURITY.md com o Google Drive
-for f_prompt in ["SOUL.md", "AGENTS.md", "SECURITY.md", "Modelfile.hermes3", "Modelfile.qwen2.5"]:
+for f_prompt in ["SOUL.md", "AGENTS.md", "SECURITY.md", "Modelfile.hermes3", "Modelfile.codestral", "Modelfile.qwen2.5"]:
     if os.path.exists(f_prompt) and not os.path.exists(f"{DRIVE_BASE}/{f_prompt}"):
         run_bash(f"cp -f '{f_prompt}' '{DRIVE_BASE}/{f_prompt}' 2>/dev/null || true")
 
@@ -304,9 +304,9 @@ for _ in range(25):
         break
     time.sleep(1)
 
-print("-> Carregando modelos Hermes 3 e Qwen 2.5 para Dual Engine (24GB VRAM)...")
+print("-> Carregando modelos Hermes 3 (8B) e Codestral (22B) para Dual Engine (24GB VRAM)...")
 run_bash("ollama pull hermes3:8b")
-run_bash("ollama pull qwen2.5:7b")
+run_bash("ollama pull codestral:22b")
 
 # ------------------------------------------------------------------------------
 # 7. REDE & SERVIDORES: CLOUDFLARE + TAILSCALE (OPCIONAL) + NEXORA API
@@ -376,7 +376,7 @@ if not vnc_url:
                     break
 
 print("\n" + "="*72)
-print("🐉 ECOSSISTEMA NEXORA + KALI DESKTOP ONLINE! (HERMES 3 & QWEN 2.5)")
+print("🐉 ECOSSISTEMA NEXORA + KALI DESKTOP ONLINE! (HERMES 3 & CODESTRAL 22B)")
 print("="*72)
 
 if vnc_url:

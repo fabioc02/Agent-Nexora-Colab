@@ -1776,49 +1776,51 @@ def pensar(prompt, historico, contexto="", instrucao=""):
         salvar_memoria(historico)
         return resposta_direta
 
-    # 3. AUTO-EXECUÇÃO DO PIPELINE REA (morluto/rea + Qwen 2.5 Dual Engine)
+    # 3. AUTO-EXECUÇÃO DO PIPELINE REA (morluto/rea + Qwen) COMO SUPORTE PARA O HERMES 3
     prompt_lower = prompt_limpo.lower()
     pediu_re = any(w in prompt_lower for w in [
         'engenharia reversa', 'analisar', 'analise', 'decompile', 'descompilar',
         'rea', 'dissecar', 'verifique o programa', 'verifique o executável', 'investigue', 'triagem'
     ])
+    termos_apenas_relatorio = ['apenas relatorio', 'somente relatorio', 'apenas triagem', 'so relatorio']
     alvo_re = caminho_detectado or CURRENT_CWD
+
     if pediu_re and alvo_re and (os.path.exists(alvo_re) or alvo_re.startswith("/content/drive")):
-        print(f"[Agente Auto-REA] Disparando pipeline autônomo contínuo REA para: {alvo_re}")
+        print(f"[Agente Auto-REA] Executando triagem técnica REA para subsidiar o Hermes: {alvo_re}")
         CURRENT_CWD = alvo_re if os.path.isdir(alvo_re) else os.path.dirname(alvo_re)
         AGENT_CURRENT_STATE["status"] = "executing_rea"
-        AGENT_CURRENT_STATE["etapa"] = f"Pipeline REA Ativo: {os.path.basename(alvo_re)}"
+        AGENT_CURRENT_STATE["etapa"] = f"Pipeline REA: {os.path.basename(alvo_re)}"
         try:
             from rea_engine import analisar_com_rea
-            modelo_revisor = "qwen2.5:7b" if ("dual" in ACTIVE_MODEL or "qwen" in ACTIVE_MODEL) else "hermes3:8b"
+            if "codestral" in ACTIVE_MODEL:
+                modelo_revisor = "codestral:22b"
+            elif "qwen" in ACTIVE_MODEL:
+                modelo_revisor = "qwen2.5:7b"
+            elif "dual" in ACTIVE_MODEL:
+                modelo_revisor = "codestral:22b" if "codestral" in ACTIVE_MODEL else ("qwen2.5:7b" if "qwen" in ACTIVE_MODEL else "codestral:22b")
+            else:
+                modelo_revisor = "hermes3:8b"
             res_rea = analisar_com_rea(alvo_re, modelo_ia=modelo_revisor)
             
-            if not res_rea.get("sucesso", True):
-                erro_msg = res_rea.get("erro", "Falha na localização do alvo.")
-                pastas_sug = res_rea.get("pastas_disponiveis_drive", [])
-                sugestao_txt = ("\n\n📁 **Pastas localizadas no seu Drive (`/content/drive/MyDrive/AgentNexora`):**\n" + "\n".join(f"- `{p}`" for p in pastas_sug)) if pastas_sug else ""
-                resposta_rea = f"⚠️ **[Alvo não localizado no Google Drive]**\n{erro_msg}{sugestao_txt}\n\nPor favor, confirme o caminho ou envie o arquivo para a pasta do Drive."
-            else:
+            if res_rea.get("sucesso", True):
                 relatorio_md = res_rea.get("resumo_md", "")
                 caminho_rel = res_rea.get("relatorio", "")
-                
-                resposta_rea = (
-                    f"🔬 **[PIPELINE REA EXECUTADO COM SUCESSO - NEXORA DUAL ENGINE]**\n\n"
-                    f"{relatorio_md}\n\n"
-                    f"📁 **Dossiê Salvo no Google Drive:**\n"
-                    f"- Relatório completo: `{caminho_rel}`\n"
-                    f"- Diretório de Análise: `{res_rea.get('diretorio_projeto', '')}`\n\n"
-                    f"*(Processamento contínuo concluído via REA + {modelo_revisor})*"
+                logs_execucao.append(
+                    f"🔬 **[Triagem REA (morluto/rea + {modelo_revisor})]:** `{os.path.basename(alvo_re)}`\n"
+                    f"- Arquitetura: `{res_rea.get('pe_info', {}).get('arch', 'N/A')}`\n"
+                    f"- DLLs Requeridas: `{len(res_rea.get('pe_info', {}).get('dlls_importadas', []))} DLLs`\n"
+                    f"- Relatório Completo: `{caminho_rel}`"
                 )
-            
-            historico.append({"role": "user", "content": prompt})
-            historico.append({"role": "assistant", "content": resposta_rea})
-            salvar_memoria(historico)
-            
-            AGENT_CURRENT_STATE["status"] = "idle"
-            AGENT_CURRENT_STATE["etapa"] = "Análise REA concluída"
-            AGENT_CURRENT_STATE["ultimo_update"] = time.time()
-            return resposta_rea
+                # Se o usuário pediu EXCLUSIVAMENTE o relatório sem nenhuma ação, retorna o relatório
+                if any(t in prompt_lower for t in termos_apenas_relatorio):
+                    resposta_rea = f"🔬 **[RELATÓRIO REA GERADO]**\n\n{relatorio_md}\n\n📁 Arquivo: `{caminho_rel}`"
+                    historico.append({"role": "user", "content": prompt})
+                    historico.append({"role": "assistant", "content": resposta_rea})
+                    salvar_memoria(historico)
+                    return resposta_rea
+            else:
+                erro_msg = res_rea.get("erro", "Falha na localização do alvo.")
+                logs_execucao.append(f"⚠️ [Aviso REA]: {erro_msg}")
         except Exception as e_rea:
             print(f"[Erro Pipeline Auto-REA]: {e_rea}")
 
@@ -1832,7 +1834,6 @@ def pensar(prompt, historico, contexto="", instrucao=""):
     # Janela deslizante de contexto: envia apenas as últimas 5 mensagens para o Ollama
     max_contexto = 5
     recentes = [m for m in historico if m.get("role") != "system"][-max_contexto:]
-    logs_execucao = []
     system_content = carregar_soul_prompt()
 
     # 1. Aplica instrução personalizada ativa ou enviada na requisição
@@ -2069,7 +2070,14 @@ def pensar(prompt, historico, contexto="", instrucao=""):
                     target_val = fn_args.get("target") or fn_args.get("caminho") or fn_args.get("path") or ""
                     if target_val:
                         from rea_engine import analisar_com_rea
-                        mod_rev = "qwen2.5:7b" if ("dual" in ACTIVE_MODEL or "qwen" in ACTIVE_MODEL) else "hermes3:8b"
+                        if "codestral" in ACTIVE_MODEL:
+                            mod_rev = "codestral:22b"
+                        elif "qwen" in ACTIVE_MODEL:
+                            mod_rev = "qwen2.5:7b"
+                        elif "dual" in ACTIVE_MODEL:
+                            mod_rev = "codestral:22b" if "codestral" in ACTIVE_MODEL else ("qwen2.5:7b" if "qwen" in ACTIVE_MODEL else "codestral:22b")
+                        else:
+                            mod_rev = "hermes3:8b"
                         res_rea = analisar_com_rea(target_val, modelo_ia=mod_rev)
                         logs_execucao.append(f"🔬 **REA Suite (morluto/rea + {mod_rev}):** `{os.path.basename(target_val)}`\n- Relatório: `{res_rea.get('relatorio', '')}`\n- Arquitetura: `{res_rea.get('pe_info', {}).get('arch', 'N/A')}`")
                         mensagens_ollama.append({"role": "user", "content": f"<tool_response>\n{{\"name\": \"rea_analyze\", \"result\": {json.dumps(res_rea.get('resumo_md', '')[:1500])}}}\n</tool_response>"})
@@ -2640,7 +2648,9 @@ def api_models_list():
         "modelo_ativo": ACTIVE_MODEL,
         "modelos_instalados": installed,
         "modelos_sugeridos": [
+            {"id": "dual:hermes3+codestral", "nome": "🚀 Dual Engine: Hermes 3 + Codestral (22B)", "descricao": "Hermes 3 (8B Executor/Tools) + Codestral (22B Mistral Código/Assembly/Decompilação) na GPU L4 (24GB VRAM)"},
             {"id": "dual:hermes3+qwen2.5", "nome": "⚡ Dual Engine: Hermes 3 + Qwen 2.5", "descricao": "Hermes 3 (Executor/Tools) + Qwen 2.5 (Analista REA/Código) na GPU L4 (24GB VRAM)"},
+            {"id": "codestral:22b", "nome": "Codestral 22B (Mistral AI)", "descricao": "Especialista em 80+ linguagens, C/C++, Assembly e Engenharia Reversa (14GB VRAM)"},
             {"id": "hermes3:8b", "nome": "Nous Hermes 3 (8B)", "descricao": "Agente Autônomo com Scratchpad e Tool Calling na GPU L4 (24GB VRAM)"},
             {"id": "qwen2.5:7b", "nome": "Qwen 2.5 (7B)", "descricao": "Raciocínio lógico afiado, geração de código e ferramentas"},
             {"id": "qwen2.5:14b", "nome": "Qwen 2.5 (14B)", "descricao": "Modelo de alto nível para arquitetura e engenharia complexa"},
@@ -2887,7 +2897,7 @@ def api_save_security(req: TextFileUpdateRequest):
 @api_app.get("/api/agent/modelfiles")
 def api_get_modelfiles():
     resultado = {}
-    for mf in ["Modelfile.hermes3", "Modelfile.qwen2.5"]:
+    for mf in ["Modelfile.hermes3", "Modelfile.codestral", "Modelfile.qwen2.5"]:
         if os.path.exists(mf):
             try:
                 with open(mf, "r", encoding="utf-8") as f:

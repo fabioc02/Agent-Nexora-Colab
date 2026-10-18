@@ -277,16 +277,23 @@ for i in {1..25}; do
     sleep 1
 done
 
-# Carrega os modelos para Dual Engine: Hermes 3 + Qwen 2.5
-MODELO_PRIMARIO="${1:-dual:hermes3+qwen2.5}"
+# Carrega os modelos para Dual Engine: Hermes 3 + Codestral 22B (ou Qwen 2.5)
+MODELO_PRIMARIO="${1:-dual:hermes3+codestral}"
 if ! ollama list | grep -q "hermes3:8b"; then
     echo "-> Baixando Hermes 3 (8B) [Executor Agêntico]..."
     ollama pull hermes3:8b
 fi
 
-if ! ollama list | grep -q "qwen2.5:7b"; then
-    echo "-> Baixando Qwen 2.5 (7B) [Analista REA & Código]..."
-    ollama pull qwen2.5:7b || true
+if [[ "$MODELO_PRIMARIO" == *"qwen"* ]]; then
+    if ! ollama list | grep -q "qwen2.5:7b"; then
+        echo "-> Baixando Qwen 2.5 (7B) [Analista REA & Código]..."
+        ollama pull qwen2.5:7b || true
+    fi
+else
+    if ! ollama list | grep -q "codestral"; then
+        echo "-> Baixando Codestral (22B) [Mistral AI - Especialista Código, Assembly & REA]..."
+        ollama pull codestral:22b || true
+    fi
 fi
 
 # 7. Túneis Cloudflare para a API do Nexora (porta 5000)

@@ -27,7 +27,7 @@ mkdir -p "$DRIVE_BASE/samples_wav"
 mkdir -p "$DRIVE_BASE/ArquivosPC"
 
 # Sincroniza SOUL.md, AGENTS.md e SECURITY.md para persistência permanente no Google Drive
-for f_prompt in SOUL.md AGENTS.md SECURITY.md Modelfile.hermes3 Modelfile.qwen2.5; do
+for f_prompt in SOUL.md AGENTS.md SECURITY.md Modelfile.hermes3 Modelfile.codestral Modelfile.qwen2.5; do
     if [ -f "$f_prompt" ] && [ ! -f "$DRIVE_BASE/$f_prompt" ]; then
         cp -f "$f_prompt" "$DRIVE_BASE/$f_prompt" 2>/dev/null || true
     fi

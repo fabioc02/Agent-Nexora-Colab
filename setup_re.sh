@@ -38,9 +38,11 @@ pip install -q \
     pyelftools requests fastapi uvicorn pydantic || true
 pip install -q frida-tools flare-capa r2pipe python-rtmidi binwalk || true
 
-# 5. Node.js & REA (morluto/rea - Reverse Engineer Anything)
-echo "⚡ [REA ENGINE] Verificando Node.js e instalando REA (morluto/rea)..."
-if ! command -v node &>/dev/null; then
+# 5. Node.js (v22 LTS) & REA (morluto/rea - Reverse Engineer Anything)
+echo "⚡ [REA ENGINE] Verificando versão do Node.js (necessário >=22 para rea-agents)..."
+NODE_MAJOR=$(node -v 2>/dev/null | cut -d'.' -f1 | tr -d 'v' || echo "0")
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo "  -> Atualizando Node.js para v22 LTS oficial via NodeSource..."
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1 || true
     apt-get install -y -qq nodejs || true
 fi

@@ -100,6 +100,9 @@ class ChatRequest(BaseModel):
     mensagem: str
     contexto: str = ""
     instrucao: str = ""
+    modo: str = ""
+
+MODO_AGENTE_ATUAL = "hibrido"  # "hibrido", "re", "geral"
 
 class InstructionRequest(BaseModel):
     id: str = ""
@@ -1742,11 +1745,38 @@ CORRECOES = {
     ),
 }
 
-def pensar(prompt, historico, contexto="", instrucao=""):
-    global CURRENT_CWD, AGENT_CURRENT_STATE
+def pensar(prompt, historico, contexto="", instrucao="", modo=""):
+    global CURRENT_CWD, AGENT_CURRENT_STATE, MODO_AGENTE_ATUAL
     logs_execucao = []
     url = "http://localhost:11434/api/chat"
     prompt_limpo = prompt.strip()
+
+    if modo and modo in ["hibrido", "re", "geral"]:
+        MODO_AGENTE_ATUAL = modo
+
+    # Comandos rápidos de troca de modo no chat
+    p_check = prompt_limpo.lower()
+    if p_check in ["/modo re", "modo re", "ativar modo re", "modo engenharia reversa"]:
+        MODO_AGENTE_ATUAL = "re"
+        resp = "🔬 **[Modo Engenharia Reversa (REA Dedicado) Ativado]**\nO agente agora focará com prioridade máxima em dissecção de binários, Ghidra, relatórios PE/ELF e análise automática pela suíte REA (`morluto/rea`)."
+        historico.append({"role": "user", "content": prompt})
+        historico.append({"role": "assistant", "content": resp})
+        salvar_memoria(historico)
+        return resp
+    elif p_check in ["/modo geral", "modo geral", "modo workstation", "modo audio", "modo áudio", "modo acao", "modo ação"]:
+        MODO_AGENTE_ATUAL = "geral"
+        resp = "🎵 **[Modo Workstation & Automação Ativado]**\nO agente agora focará com prioridade máxima em downloads, REAPER, VSTs no Wine, MIDI, SoundFonts e automação no terminal Linux."
+        historico.append({"role": "user", "content": prompt})
+        historico.append({"role": "assistant", "content": resp})
+        salvar_memoria(historico)
+        return resp
+    elif p_check in ["/modo hibrido", "modo hibrido", "modo híbrido", "modo padrao", "modo padrão"]:
+        MODO_AGENTE_ATUAL = "hibrido"
+        resp = "⚡ **[Modo Híbrido Ativado]**\nO agente alterna dinamicamente entre REA para binários e execução autônoma para tarefas de áudio, workstation e sistema."
+        historico.append({"role": "user", "content": prompt})
+        historico.append({"role": "assistant", "content": resp})
+        salvar_memoria(historico)
+        return resp
 
     # 1. Se o usuário digitou um comando bash direto no chat (ex: df -h, ls ..., nvidia-smi, apt install ...)
     comandos_diretos_bash = ['ls', 'df', 'cat', 'pwd', 'nvidia-smi', 'uname', 'free', 'pip', 'apt', 'git', 'g++', 'make', 'cmake', 'python']
@@ -1814,25 +1844,39 @@ def pensar(prompt, historico, contexto="", instrucao=""):
         salvar_memoria(historico)
         return resposta_direta
 
-    # 3. AUTO-EXECUÇÃO DO PIPELINE REA (morluto/rea + Qwen) COMO SUPORTE PARA O HERMES 3
+    # 3. AUTO-EXECUÇÃO DO PIPELINE REA (Sensível ao Modo Ativo do Agente)
     prompt_lower = prompt_limpo.lower()
-    pediu_re = any(w in prompt_lower for w in [
-        'engenharia reversa', 'analisar', 'analise', 'decompile', 'descompilar',
-        'rea', 'dissecar', 'verifique o programa', 'verifique o executável', 'investigue', 'triagem'
-    ])
     termos_apenas_relatorio = ['apenas relatorio', 'somente relatorio', 'apenas triagem', 'so relatorio']
-    alvo_re = caminho_detectado or CURRENT_CWD
-    if (not alvo_re or alvo_re in [".", "/content", "/root", ""] or not os.path.exists(alvo_re)) and pediu_re:
-        dir_re_base = "/content/drive/MyDrive/AgentNexora/RE"
-        if os.path.exists(dir_re_base):
-            subpastas = [os.path.join(dir_re_base, d) for d in os.listdir(dir_re_base) if os.path.isdir(os.path.join(dir_re_base, d))]
-            if subpastas:
-                subpastas.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-                alvo_re = subpastas[0]
-                print(f"[Agente Auto-Target] Alvo RE inferido da pasta mais recente no Drive: {alvo_re}")
+
+    if MODO_AGENTE_ATUAL == "re":
+        # Modo RE: Prioridade total na engenharia reversa
+        pediu_re = True
+        alvo_re = caminho_detectado or CURRENT_CWD
+        if (not alvo_re or alvo_re in [".", "/content", "/root", ""] or not os.path.exists(alvo_re)):
+            dir_re_base = "/content/drive/MyDrive/AgentNexora/RE"
+            if os.path.exists(dir_re_base):
+                subpastas = [os.path.join(dir_re_base, d) for d in os.listdir(dir_re_base) if os.path.isdir(os.path.join(dir_re_base, d))]
+                if subpastas:
+                    subpastas.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                    alvo_re = subpastas[0]
+    elif MODO_AGENTE_ATUAL == "geral":
+        # Modo Geral/Workstation: Não dispara auto-REA que interrompa tarefas de áudio/Wine
+        pediu_re = False
+        alvo_re = None
+    else:  # Modo Híbrido (Padrão)
+        acoes_gerais = any(act in prompt_lower for act in [
+            'baixe', 'baixar', 'download', 'instale', 'instalar', 'pesktop',
+            'reaper', 'vst', 'wine', 'triton', 'extraia', 'extrair', 'soundfont',
+            'sf2', 'midi', 'amostra', 'kit', 'patch', 'ative', 'ativador'
+        ])
+        pediu_re = any(w in prompt_lower for w in [
+            'engenharia reversa', 'triagem rea', 'rea analyze', 'decompile binario',
+            'descompilar binario', 'dissecar executavel'
+        ]) and not acoes_gerais
+        alvo_re = caminho_detectado
 
     if pediu_re and alvo_re and (os.path.exists(alvo_re) or alvo_re.startswith("/content/drive")):
-        print(f"[Agente Auto-REA] Executando triagem técnica REA para subsidiar o Hermes: {alvo_re}")
+        print(f"[Agente Auto-REA] Executando triagem técnica REA solicitada: {alvo_re}")
         CURRENT_CWD = alvo_re if os.path.isdir(alvo_re) else os.path.dirname(alvo_re)
         AGENT_CURRENT_STATE["status"] = "executing_rea"
         AGENT_CURRENT_STATE["etapa"] = f"Pipeline REA: {os.path.basename(alvo_re)}"
@@ -2753,12 +2797,46 @@ def api_terminal_history():
         "history": list(TERMINAL_HISTORY)
     }
 
+@api_app.get("/api/agent/modo")
+def api_get_agent_modo():
+    global MODO_AGENTE_ATUAL
+    return {
+        "modo_atual": MODO_AGENTE_ATUAL,
+        "modos": [
+            {
+                "id": "hibrido",
+                "nome": "⚡ Modo Híbrido",
+                "descricao": "Equilíbrio inteligente: REA sob demanda para binários e execução autônoma para tarefas de áudio e terminal"
+            },
+            {
+                "id": "re",
+                "nome": "🔬 Modo Engenharia Reversa (REA Dedicado)",
+                "descricao": "Prioridade máxima para o pipeline morluto/rea, Ghidra, relatórios PE/ELF e dissecção automática"
+            },
+            {
+                "id": "geral",
+                "nome": "🎵 Modo Workstation & Automação",
+                "descricao": "Foco em REAPER, VSTs no Wine, MIDI, SoundFonts SF2/SFZ, downloads e automação no Linux"
+            }
+        ]
+    }
+
+@api_app.post("/api/agent/modo")
+def api_set_agent_modo(req: dict):
+    global MODO_AGENTE_ATUAL
+    novo = str(req.get("modo", "hibrido")).strip().lower()
+    if novo in ["hibrido", "re", "geral"]:
+        MODO_AGENTE_ATUAL = novo
+        print(f"[Agente Modo] Modo de operação alterado para: {MODO_AGENTE_ATUAL}")
+        return {"status": "ok", "modo_atual": MODO_AGENTE_ATUAL, "mensagem": f"Modo alterado para: {MODO_AGENTE_ATUAL}"}
+    return {"status": "erro", "mensagem": "Modo inválido. Escolha: hibrido, re ou geral."}
+
 @api_app.post("/api/chat")
 def api_chat(req: ChatRequest):
     try:
         historico = carregar_memoria()
-        print(f"\n[Web Interface] Recebeu mensagem: {req.mensagem}")
-        resposta = pensar(req.mensagem, historico, req.contexto, req.instrucao)
+        print(f"\n[Web Interface] Recebeu mensagem: {req.mensagem} (Modo: {req.modo or MODO_AGENTE_ATUAL})")
+        resposta = pensar(req.mensagem, historico, req.contexto, req.instrucao, modo=req.modo)
         print(f"[Web Interface] Respondeu: {resposta[:60]}...")
         return {"resposta": resposta}
     except Exception as e:
@@ -2781,8 +2859,8 @@ def api_chat_async(req: ChatRequest):
     def _worker():
         try:
             historico = carregar_memoria()
-            print(f"\n[Web Interface Async] Iniciando tarefa {task_id}: {req.mensagem[:60]}...")
-            resposta = pensar(req.mensagem, historico, req.contexto, req.instrucao)
+            print(f"\n[Web Interface Async] Iniciando tarefa {task_id}: {req.mensagem[:60]} (Modo: {req.modo or MODO_AGENTE_ATUAL})...")
+            resposta = pensar(req.mensagem, historico, req.contexto, req.instrucao, modo=req.modo)
             ASYNC_CHAT_TASKS[task_id]["status"] = "completed"
             ASYNC_CHAT_TASKS[task_id]["resposta"] = resposta
             ASYNC_CHAT_TASKS[task_id]["etapa"] = "Tarefa concluída"

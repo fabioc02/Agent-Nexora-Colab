@@ -243,7 +243,9 @@ cloudflared tunnel --url http://localhost:6080 > /tmp/novnc_cf.log 2>&1 &
 echo "🔬 [4/7] Configurando Toolchain REA (morluto/rea) e decompiladores..."
 pip install -q fastapi uvicorn pydantic requests pefile capstone lief construct mido soundfile numpy scipy 2>/dev/null || true
 
-if ! command -v node &>/dev/null; then
+NODE_MAJOR=$(node -v 2>/dev/null | cut -d'.' -f1 | tr -d 'v' || echo "0")
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo "⚡ [Node.js] Atualizando Node.js para versão 22 LTS (exigida pelo rea-agents)..."
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1 || true
     apt-get install -y -qq nodejs >/dev/null 2>&1 || true
 fi

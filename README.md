@@ -92,6 +92,12 @@ apt-get install -y --no-install-recommends \
     wine wine64 winetricks unrar p7zip-full innoextract \
     binutils file xxd bsdextrautils bsdmainutils ent \
     curl wget git python3-pip python3-dev build-essential > /dev/null 2>&1
+
+if ! command -v cloudflared &>/dev/null; then
+    wget -q -nc https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -O /tmp/cloudflared.deb
+    dpkg -i /tmp/cloudflared.deb || apt-get install -y -f > /dev/null 2>&1
+    rm -f /tmp/cloudflared.deb
+fi
 """)
 
 # Sincroniza SOUL.md, AGENTS.md e SECURITY.md com o Google Drive
@@ -269,7 +275,8 @@ pip install -q \
     fastapi uvicorn pydantic requests \
     pefile capstone lief construct mido soundfile numpy scipy 2>/dev/null
 
-if ! command -v node &>/dev/null; then
+NODE_MAJOR=$(node -v 2>/dev/null | cut -d'.' -f1 | tr -d 'v' || echo "0")
+if [ "$NODE_MAJOR" -lt 22 ]; then
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1 || true
     apt-get install -y -qq nodejs >/dev/null 2>&1 || true
 fi

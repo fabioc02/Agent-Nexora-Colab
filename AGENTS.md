@@ -82,7 +82,27 @@ O Nexora opera em modo **Dual Engine Híbrido**, combinando a especialização d
 
 ---
 
-## 4. COMO EDITAR ESTES ARQUIVOS NO AMBIENTE
+## 4. MODOS DE OPERAÇÃO DO AGENTE (SELEÇÃO DINÂMICA)
+
+O Nexora opera em **3 Modos de Operação**, selecionáveis via interface web, endpoint `/api/agent/modo` ou comandos diretos no chat:
+
+1. **🔬 Modo Engenharia Reversa (REA Dedicado)**:
+   - **Comando no Chat**: `/modo re`
+   - **Objetivo**: Foco absoluto na dissecção técnica de binários (Windows PE, Linux ELF, Firmwares, CASM/STY Yamaha, PCG Korg).
+   - **Comportamento**: Dispara o pipeline completo do `morluto/rea` automaticamente, invocando o Ghidra, radare2 e o Codestral 22B para gerar relatórios consolidados em `/content/drive/MyDrive/AgentNexora/RE/`.
+
+2. **🎵 Modo Workstation & Automação (Áudio, Wine e Ação Livre)**:
+   - **Comando no Chat**: `/modo geral`
+   - **Objetivo**: Execução de tarefas produtivas sem interrupção de relatórios antigos: downloads, REAPER, plugins VST via Wine, criação de sequências MIDI, scripts Python de fatiamento e compilação de SoundFonts (`.sf2` e `.sfz`).
+   - **Comportamento**: As ferramentas REA continuam disponíveis caso chamadas explicitamente, mas o agente não fica preso a pastas anteriores.
+
+3. **⚡ Modo Híbrido (Padrão Inteligente)**:
+   - **Comando no Chat**: `/modo hibrido`
+   - **Objetivo**: Alternância contextual automática: se você passar um binário para dissecar, ele ativa o REA; se pedir para instalar um VST ou compilar SoundFonts, ele executa os comandos no terminal root com máxima velocidade.
+
+---
+
+## 5. COMO EDITAR ESTES ARQUIVOS NO AMBIENTE
 Você pode editar este arquivo (`AGENTS.md`) e a alma do agente (`SOUL.md`) de 4 formas diferentes:
 
 1. **Na Interface Web do Nexora**:

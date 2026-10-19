@@ -224,16 +224,17 @@ chmod +x /tmp/start_kali.sh
 sleep 2
 
 # Servidor VNC (porta 5900) e NoVNC Web (porta 6080)
-x11vnc -display :1 -nopw -listen localhost -forever -shared -rfbport 5900 > /tmp/x11vnc.log 2>&1 &
-sleep 1
+x11vnc -display :1 -nopw -listen 127.0.0.1 -forever -shared -rfbport 5900 -repeat -noxrecord -noxfixes -noxdamage > /tmp/x11vnc.log 2>&1 &
+sleep 2
 
 NOVNC_DIR="/usr/share/novnc"
-if [ ! -d "$NOVNC_DIR" ]; then
+if [ ! -d "$NOVNC_DIR" ] || [ ! -f "$NOVNC_DIR/vnc.html" ]; then
+    rm -rf /opt/novnc 2>/dev/null || true
     git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc 2>/dev/null || true
     NOVNC_DIR="/opt/novnc"
 fi
 ln -sf "$NOVNC_DIR/vnc.html" "$NOVNC_DIR/index.html" 2>/dev/null || true
-websockify -D --web="$NOVNC_DIR" 6080 localhost:5900 > /tmp/websockify.log 2>&1
+websockify -D --web="$NOVNC_DIR" 6080 127.0.0.1:5900 > /tmp/websockify.log 2>&1
 
 # Túnel Cloudflare para o NoVNC na porta 6080
 cloudflared tunnel --url http://localhost:6080 > /tmp/novnc_cf.log 2>&1 &

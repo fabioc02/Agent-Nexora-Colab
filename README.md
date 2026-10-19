@@ -241,17 +241,18 @@ os.chmod("/tmp/start_kali.sh", 0o755)
 subprocess.Popen("/bin/bash /tmp/start_kali.sh", shell=True)
 time.sleep(3)
 
-# 3. Servidor VNC e noVNC Web (Garante diretório novnc)
+# 3. Servidor VNC e noVNC Web (Garante diretório novnc e compatibilidade IPv4)
 run_bash("""
-if [ ! -d /usr/share/novnc ]; then
+if [ ! -d /usr/share/novnc ] || [ ! -f /usr/share/novnc/vnc.html ]; then
+    rm -rf /usr/share/novnc 2>/dev/null || true
     git clone --depth 1 https://github.com/novnc/noVNC.git /usr/share/novnc 2>/dev/null || true
 fi
 ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
 """)
 
-subprocess.Popen("x11vnc -display :1 -nopw -listen localhost -forever -shared -rfbport 5900 > /dev/null 2>&1", shell=True)
-time.sleep(1)
-subprocess.Popen("websockify -D --web=/usr/share/novnc/ 6080 localhost:5900 > /dev/null 2>&1", shell=True)
+subprocess.Popen("x11vnc -display :1 -nopw -listen 127.0.0.1 -forever -shared -rfbport 5900 -repeat -noxrecord -noxfixes -noxdamage > /tmp/x11vnc.log 2>&1", shell=True)
+time.sleep(2)
+subprocess.Popen("websockify -D --web=/usr/share/novnc/ 6080 127.0.0.1:5900 > /tmp/websockify.log 2>&1", shell=True)
 time.sleep(1)
 
 # 4. Inicia túnel Cloudflare para o NoVNC na porta 6080

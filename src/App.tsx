@@ -2478,7 +2478,7 @@ function ChatView({
       // 2. Fallback síncrono tradicional caso o servidor esteja em versão anterior
       if (!usouAsync) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000);
+        const timeoutId = setTimeout(() => controller.abort(), 900000);
         const response = await fetch(`${cleanUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

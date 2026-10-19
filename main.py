@@ -1513,7 +1513,7 @@ def executar_comando_inteligente(comando: str, source: str = "hermes_agent") -> 
             saida_apt = ""
             if any(w in cmd_ajustado for w in ['apt-get install -y', 'apt install -y']) and len(cmd_ajustado.split()) > 3:
                 try:
-                    p = subprocess.run(cmd_ajustado, shell=True, cwd=CURRENT_CWD, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=180)
+                    p = subprocess.run(cmd_ajustado, shell=True, cwd=CURRENT_CWD, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900)
                     saida_apt = p.stdout
                 except Exception as e:
                     saida_apt = str(e)
@@ -1544,12 +1544,12 @@ def executar_comando_inteligente(comando: str, source: str = "hermes_agent") -> 
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=180,
+            timeout=900,
             env=env_sub
         )
         saida = proc.stdout
     except subprocess.TimeoutExpired:
-        saida = "[Tempo Limite de 180s Excedido] O comando executou por mais de 3 minutos no Colab."
+        saida = "[Tempo Limite de 900s Excedido] O comando executou por mais de 15 minutos no Colab."
     except Exception as e:
         saida = f"Erro ao executar no terminal: {e}"
 
@@ -2033,13 +2033,13 @@ def pensar(prompt, historico, contexto="", instrucao="", modo=""):
         }
         
         try:
-            resposta = requests.post(url, json=payload, timeout=300)
+            resposta = requests.post(url, json=payload, timeout=900)
             if resposta.status_code != 200:
                 return "Erro no Ollama: " + resposta.text
             dados = resposta.json()
             texto = dados['message']['content']
         except requests.exceptions.Timeout:
-            return "[Tempo Limite Excedido] A compilação ou geração demorou mais de 300s. Tente solicitar uma etapa menor."
+            return "[Tempo Limite Excedido] A compilação ou geração demorou mais de 900s (15 minutos). Tente solicitar uma etapa menor."
         except Exception as e:
             err_str = str(e)
             if any(k in err_str for k in ["Connection aborted", "RemoteDisconnected", "Failed to establish a new connection"]):
